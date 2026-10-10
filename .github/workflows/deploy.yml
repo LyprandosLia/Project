@@ -13,18 +13,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Sync files to server via rsync
-        uses: appleboy/rsync-action@v1.0.0
+        uses: burnett01/rsync-deployments@7.0.1
         with:
-          host: deploy.nkyriopoulos.com
-          username: lyp
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "./"
-          target: "/srv/lyp"
-          delete: true
-          exclude: |
-            .git/
-            data/
-            .env
+          switches: -avz --delete --exclude=.git --exclude=.github --exclude=data/ --exclude=.env
+          path: ./
+          remote_path: /srv/lyp/
+          remote_host: deploy.nkyriopoulos.com
+          remote_user: lyp
+          remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
 
       - name: Generate .env on server
         uses: appleboy/ssh-action@v1.0.0
@@ -32,8 +28,10 @@ jobs:
           host: deploy.nkyriopoulos.com
           username: lyp
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
           script: |
-            cat > /srv/lyp/.env <<EOF
+            umask 077
+            cat > /srv/lyp/.env <<'EOF'
             SITE_USERNAME=${{ secrets.SITE_USERNAME }}
             SITE_PASSWORD=${{ secrets.SITE_PASSWORD }}
             DB_NAME=${{ secrets.DB_NAME }}
@@ -48,6 +46,7 @@ jobs:
           host: deploy.nkyriopoulos.com
           username: lyp
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
           script: |
             cd /srv/lyp
-            docker compose up -d --build web
+            docker compose up -d --build --remove-orphans web
