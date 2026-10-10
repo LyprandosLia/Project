@@ -39,7 +39,6 @@ $items = get_items();
 </head>
 <body>
   <h1>Items - Changed by Lee</h1>
-  <h2> This is a test header <h2>
 
   <?php if (empty($items)): ?>
     <p>No items yet.</p>
