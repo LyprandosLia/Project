@@ -26,7 +26,7 @@ $items = get_items();
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Items - Changed by Lee</title>
+  <title>Items Menu</title>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; color: #1a1a1a; }
     .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; }
@@ -38,7 +38,7 @@ $items = get_items();
   </style>
 </head>
 <body>
-  <h1>Items</h1>
+  <h1>Items - Changed by Lee</h1>
 
   <?php if (empty($items)): ?>
     <p>No items yet.</p>
