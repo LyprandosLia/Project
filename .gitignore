@@ -1,3 +1,5 @@
 .env
 data/*
 !data/.gitkeep
+cicd-actions-key
+cicd-actions-key.pub
