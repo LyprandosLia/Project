@@ -11,7 +11,7 @@ services:
       - traefik
       - internal
     volumes:
-      - ./:/var/www/html
+      - ./app/:/var/www/html
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik"
