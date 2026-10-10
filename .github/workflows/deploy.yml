@@ -46,4 +46,4 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /srv/lyp
-            docker compose up -d --build web
+            docker compose up -d web
