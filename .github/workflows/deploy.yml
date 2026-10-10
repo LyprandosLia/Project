@@ -18,9 +18,13 @@ jobs:
           host: deploy.nkyriopoulos.com
           username: lyp
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "./*"
+          source: "./"
           target: "/srv/lyp"
           overwrite: true
+          exclude: |
+            .git/**
+            data/**
+            .env
 
       - name: Generate .env on server
         uses: appleboy/ssh-action@v1.0.0
