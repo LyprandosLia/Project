@@ -12,18 +12,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Upload repo to server
-        uses: appleboy/scp-action@v0.1.4
+      - name: Sync files to server via rsync
+        uses: appleboy/rsync-action@v1.0.0
         with:
           host: deploy.nkyriopoulos.com
           username: lyp
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "./"
           target: "/srv/lyp"
-          overwrite: true
+          delete: true
           exclude: |
-            .git/**
-            data/**
+            .git/
+            data/
             .env
 
       - name: Generate .env on server
@@ -42,7 +42,7 @@ jobs:
             DB_ROOT_PASSWORD=${{ secrets.DB_ROOT_PASSWORD }}
             EOF
 
-      - name: Run docker compose on server
+      - name: Restart docker compose
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: deploy.nkyriopoulos.com
@@ -50,4 +50,4 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /srv/lyp
-            docker compose up -d web
+            docker compose up -d --build web
