@@ -56,7 +56,7 @@ $items = get_items();
   <form class="add" method="post" action="/">
     <input type="text" name="name" placeholder="Item name" required>
     <textarea name="note" placeholder="Note (optional)"></textarea>
-    <button type="submit">Add item here</button>
+    <button type="submit">Add item here!!</button>
   </form>
 </body>
 </html>
