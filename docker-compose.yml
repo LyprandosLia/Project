@@ -1,7 +1,5 @@
 services:
   web:
-    ports:
-    - "8080:80"
     build: .
     container_name: lyp-app
     restart: unless-stopped
