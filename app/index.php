@@ -38,7 +38,7 @@ $items = get_items();
   </style>
 </head>
 <body>
-  <h1>Items - Changed by Lee - 2026 - Test 3</h1>
+  <h1>Items - Changed by Lee - Test 3</h1>
 
   <?php if (empty($items)): ?>
     <p>No items yet.</p>
