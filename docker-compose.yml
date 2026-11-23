@@ -6,12 +6,17 @@ services:
     env_file:
       - .env
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+      catalog-api:
+        condition: service_healthy
     networks:
       - traefik
       - internal
-    volumes:
-      - ./app/:/var/www/html
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8080}:80"
+    environment:
+      CATALOG_API_URL: ${CATALOG_API_URL:-http://catalog-api:8000}
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik"
@@ -19,6 +24,23 @@ services:
       - "traefik.http.routers.lyp-app.entrypoints=websecure"
       - "traefik.http.routers.lyp-app.tls.certresolver=le"
       - "traefik.http.services.lyp-app.loadbalancer.server.port=80"
+
+  catalog-api:
+    build:
+      context: ./services/catalog-api
+    restart: unless-stopped
+    networks:
+      - internal
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   db:
     image: mariadb:11
@@ -31,12 +53,18 @@ services:
       MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
     volumes:
       - ./data:/var/lib/mysql
-      - ./db-init:/docker-entrypoint-initdb.d
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
     networks:
       - internal
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     # No `expose`/`ports` and NOT on the `traefik` network - the
-    # database is reachable only from the `web` container, never from
-    # the internet.
+    # database is reachable only from services on the internal network,
+    # never from the internet.
 
 networks:
   traefik:
