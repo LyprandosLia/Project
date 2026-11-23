@@ -1,35 +1,27 @@
 # Copilot Instructions
 
 ## Workspace Reality
-- This repository is a small PHP + MariaDB deployment demo, not yet the full Multi-Agent Food OS.
-- PHP runs in the `lyp-app` container from `php:8.3-apache`; Apache serves `/var/www/html`, which is mounted from `./app/`. Only `pdo` and `pdo_mysql` are installed explicitly in the Dockerfile.
-- MariaDB 11 runs in the `lyp-db` container on Docker network `internal`. The PHP host is `db` (the Compose service name), database `db1`, and port `3306` unless Compose or the environment overrides it. The database has no published host port and is not exposed through Traefik.
-- Compose loads `.env` for `lyp-app`. Required values are `SITE_USERNAME`, `SITE_PASSWORD`, `DB_HOST`, `DB_NAME`, `DB_USER`, and `DB_PASSWORD`; MariaDB also receives `DB_ROOT_PASSWORD`. `.env.example` documents their defaults. Never commit `.env`.
-- Database persistence is `./data/`; first-run schema and seed SQL is `./db-init/init.sql`, which creates `items` and inserts three rows. It is mounted into MariaDB's initialization directory.
-- Traefik routes `lyp-app` to `https://lyp.nkyriopoulos.com` on the external `traefik` network. Deployment uses GitHub Actions to rsync to `/srv/lyp/` and then runs `docker compose up -d --build --remove-orphans web`.
-- Do not publish host ports (`ports:`) on `web`, `db`, or `catalog-api` in `docker-compose.yml`; external access is handled exclusively via Traefik labels.
-- Current source is `app/index.php` and `app/db.php`; there is currently no `composer.json`, `vendor/`, `src/`, `views/`, `services/catalog-api/`, or FastAPI application. Do not claim or require tools/paths that do not exist until they are actually added.
+- This repository contains the Multi-Agent Food OS: a PHP 8.3/Apache web application, MariaDB 11 database, and internal FastAPI catalog API.
+- Compose services are `web`, `catalog-api`, and `db`. The web container is routed through Traefik at `https://lyp.nkyriopoulos.com`; the API and database have no published host ports.
+- Apache serves `public/`; `public/index.php` delegates to `app/index.php`. Application classes use Composer's `App\` to `src/` PSR-4 mapping. The server-rendered dashboard is in `views/`.
+- `database/schema.sql` initializes an empty MariaDB data directory and seeds development data. It does not migrate an already-populated `./data/` directory.
+- GitHub Actions deploys pushes to `main` to `/srv/lyp/`. Never commit `.env`, credentials, generated price caches, or database files.
 
 ## PHP, DTO, and Database Rules
-- Every PHP file must begin with `declare(strict_types=1);`, use a valid `App\...` namespace when using the application architecture, follow PSR-12, and declare explicit parameter types, return types, and typed properties.
-- For the multi-agent architecture, Composer/PSR-4 must map `App\` to `src/`, UI stays server-rendered under `views/`, and agents live under `src/Agents/` with prompt templates under `src/Agents/Prompts/`.
-- Pass structured data between agents only through readonly DTO classes such as `readonly class MealPlanDTO`; never pass loose associative arrays between agents.
-- All SQL belongs in repository classes under `src/Repository/`, with PDO exception mode and native prepares:
-  `PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION`,
-  `PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC`,
-  `PDO::ATTR_EMULATE_PREPARES => false`.
-- Always use PDO prepared statements with named parameters (`:param`). Never concatenate user or environment values into SQL or use positional placeholders for application SQL.
-- Read credentials and API/LLM secrets from `$_ENV` or `getenv()`; never hardcode or commit secrets.
-- Keep LLM JSON responses behind strict DTO decoding and validation. Quantity scaling, pantry subtraction, cost summation, and other arithmetic must be deterministic PHP.
-- Separate orchestration agents (`Orchestrator`, `MealPlanner`, `RecipeSpecialist`, `ShoppingOptimizer`, `NutritionFeedback`) and enforce a maximum 3 repair iterations when the nutrition/feedback agent requests a fix.
+- Every PHP file must begin with `declare(strict_types=1);`, use an `App\...` namespace for application classes, follow existing formatting, and declare explicit parameter and return types.
+- Structured data between the application and agents should use the existing typed DTOs. Keep SQL in repository classes, use named PDO parameters, native prepares, and exception mode.
+- Read secrets and configuration from the environment. Keep LLM JSON behind strict decoding and validation; quantity scaling, pantry subtraction, and cost summation remain deterministic application code.
+- The dashboard collects calorie/protein goals, allergies, dietary notes, fasting windows, prep limits, pantry quantities, selected breakfast/lunch/dinner slots, servings, and shopping mode. Profile and pantry writes must be validated and transactional.
+- Generation is session-only until explicit human approval. A plan rejected by nutrition validation must not be persisted. The orchestrator runs at most three total attempts, including the first.
+- Keep each agent role distinct: MealPlanner selects a valid schedule; RecipeSpecialist scales recipe quantities; ShoppingOptimizer subtracts pantry and estimates remaining purchases; NutritionFeedback validates the plan and returns revision feedback.
 
 ## FastAPI Boundary
-- Any external catalog/nutrition HTTP service belongs in `services/catalog-api/` and must use typed request/response models plus deterministic JSON contracts.
-- The primary Greek supermarket price source is the keyless `https://posokanei.gov.gr/` (e-Καταναλωτής) website. Use `httpx`, realistic browser headers, bounded timeouts, 24-hour local caching, and seeded Greek fallback prices. Do not require supermarket API keys or credentials.
-- Nutrition lookups use the keyless Open Food Facts API at `https://world.openfoodfacts.org/`, with a local per-100g fallback table for basic raw ingredients. No nutrition API key is required.
-- PHP consumes FastAPI over HTTP/JSON only after the service is explicitly requested and implemented; do not invent service dependencies or endpoints in this demo.
+- `services/catalog-api/` owns external price/nutrition HTTP calls and exposes typed JSON routes to PHP over the Compose network.
+- Price lookup uses `POST /products/search` on the PosoKanei API host (`https://api.posokanei.gov.gr`) with bounded timeouts and a 24-hour local cache. If there is no usable upstream match, use bundled fixture prices and label them `Approximate local estimate`; do not present a fixture as a live quote.
+- The exact live product response and normalized-price units still require validation. Cover parsing and unit conversion with mocked responses; do not make tests depend on PosoKanei availability.
+- Nutrition lookup checks bundled per-100g data first and calls Open Food Facts only for ingredients missing from that fixture. Do not silently treat unavailable nutrition as zero.
 
 ## Verification
-- Run `php -l <file>` for every PHP file created or modified.
-- Use `docker compose build && docker compose up -d` to verify container changes, and inspect the `lyp-app`/`lyp-db` logs when needed.
-- Run `./vendor/bin/phpunit` only if PHPUnit/vendor exists, and `pytest` only if `services/catalog-api/` exists.
+- Lint every modified PHP file with `php -l`.
+- Run catalog tests from `services/catalog-api/` with `python -m pytest tests`.
+- Run focused tests for changed behavior. Docker/database-backed checks require Docker and an initialized development database; report when those are unavailable rather than claiming integration validation.

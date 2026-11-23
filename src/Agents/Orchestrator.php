@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Agents;
 
 use App\DTO\AgentStepLogDTO;
+use App\DTO\MealPlanRequestDTO;
 use App\DTO\OrchestrationResultDTO;
 use App\DTO\UserProfileDTO;
+use App\Repository\PantryRepository;
 
 final class Orchestrator
 {
@@ -15,10 +17,11 @@ final class Orchestrator
         private RecipeSpecialistAgent $recipeSpecialist,
         private ShoppingOptimizerAgent $shoppingOptimizer,
         private NutritionFeedbackAgent $nutritionFeedback,
+        private PantryRepository $pantry,
     ) {
     }
 
-    public function run(UserProfileDTO $profile, string $startsOn): OrchestrationResultDTO
+    public function run(UserProfileDTO $profile, MealPlanRequestDTO $request): OrchestrationResultDTO
     {
         $trace = [];
         $feedback = null;
@@ -27,21 +30,22 @@ final class Orchestrator
         $scaledRecipes = [];
         $shoppingList = null;
         $validation = null;
+        $pantryItems = $this->pantry->findItemsByUser($profile->userId);
 
         for ($attempt = 1; $attempt <= 3; $attempt++) {
             $attempts = $attempt;
 
             $stepStart = hrtime(true);
             $startedAt = (new \DateTimeImmutable())->format(DATE_ATOM);
-            $plan = $this->mealPlanner->propose($profile, $startsOn, $feedback);
+            $plan = $this->mealPlanner->propose($profile, $request, $feedback, $pantryItems);
             $trace[] = $this->step(
                 'Agent 1 - MealPlanner',
-                'Proposed weekly meal selections',
+                'Proposed ' . implode(', ', $request->mealSlots) . ' meals',
                 $startedAt,
                 $stepStart,
                 'success',
                 $attempt,
-                count($plan->meals) . ' meals proposed',
+                count($plan->meals) . ' meals for ' . $request->servings . ' servings',
             );
 
             $stepStart = hrtime(true);

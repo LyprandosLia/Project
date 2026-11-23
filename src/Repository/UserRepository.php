@@ -54,9 +54,67 @@ final class UserRepository
             'allergies' => $allergies,
             'preferences' => $preferences,
             'max_prep_minutes' => $preferenceRow['max_prep_minutes'] ?? null,
-            'fasting_start' => $preferenceRow['fasting_start'] ?? null,
-            'fasting_end' => $preferenceRow['fasting_end'] ?? null,
+            'fasting_start' => isset($preferenceRow['fasting_start']) ? substr((string) $preferenceRow['fasting_start'], 0, 5) : null,
+            'fasting_end' => isset($preferenceRow['fasting_end']) ? substr((string) $preferenceRow['fasting_end'], 0, 5) : null,
         ]);
+    }
+
+    public function saveProfile(UserProfileDTO $profile): void
+    {
+        $this->pdo->beginTransaction();
+        try {
+            $preferenceStmt = $this->pdo->prepare(
+                'INSERT INTO user_preferences (
+                    user_id, daily_calorie_goal, daily_protein_goal_g, max_prep_minutes,
+                    fasting_start, fasting_end, dietary_notes
+                 ) VALUES (
+                    :user_id, :daily_calorie_goal, :daily_protein_goal_g, :max_prep_minutes,
+                    :fasting_start, :fasting_end, :dietary_notes
+                 )
+                 ON DUPLICATE KEY UPDATE
+                    daily_calorie_goal = VALUES(daily_calorie_goal),
+                    daily_protein_goal_g = VALUES(daily_protein_goal_g),
+                    max_prep_minutes = VALUES(max_prep_minutes),
+                    fasting_start = VALUES(fasting_start),
+                    fasting_end = VALUES(fasting_end),
+                    dietary_notes = VALUES(dietary_notes)'
+            );
+            $preferenceStmt->execute([
+                ':user_id' => $profile->userId,
+                ':daily_calorie_goal' => $profile->preferences['daily_calorie_goal'],
+                ':daily_protein_goal_g' => $profile->preferences['daily_protein_goal_g'],
+                ':max_prep_minutes' => $profile->maxPrepMinutes,
+                ':fasting_start' => $profile->fastingStart,
+                ':fasting_end' => $profile->fastingEnd,
+                ':dietary_notes' => $profile->preferences['dietary_notes'],
+            ]);
+
+            $deleteAllergies = $this->pdo->prepare('DELETE FROM user_allergies WHERE user_id = :user_id');
+            $deleteAllergies->execute([':user_id' => $profile->userId]);
+
+            $insertAllergy = $this->pdo->prepare(
+                'INSERT INTO user_allergies (user_id, allergen) VALUES (:user_id, :allergen)'
+            );
+            $savedAllergies = [];
+            foreach ($profile->allergies as $allergen) {
+                $allergen = trim($allergen);
+                $key = strtolower($allergen);
+                if ($allergen === '' || isset($savedAllergies[$key])) {
+                    continue;
+                }
+                $insertAllergy->execute([
+                    ':user_id' => $profile->userId,
+                    ':allergen' => $allergen,
+                ]);
+                $savedAllergies[$key] = true;
+            }
+            $this->pdo->commit();
+        } catch (\Throwable $exception) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $exception;
+        }
     }
 
     public function findRecentRecipeIds(int $userId, int $limit = 7): array

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Repository;
 
+use App\DTO\PantryItemDTO;
+use App\DTO\Quantity;
 use PDO;
 
 final class PantryRepository
@@ -17,6 +19,19 @@ final class PantryRepository
 
     public function findQuantitiesByUser(int $userId): array
     {
+        $pantry = [];
+        foreach ($this->findItemsByUser($userId) as $item) {
+            $pantry[$item->ingredientId] = [
+                'name' => $item->name,
+                'amount' => $item->quantity->amount,
+                'unit' => $item->quantity->unit,
+            ];
+        }
+        return $pantry;
+    }
+
+    public function findItemsByUser(int $userId): array
+    {
         $stmt = $this->pdo->prepare(
             'SELECT pi.ingredient_id, i.name, pi.quantity, pi.unit
              FROM pantry_inventory pi
@@ -25,14 +40,68 @@ final class PantryRepository
              ORDER BY i.name'
         );
         $stmt->execute([':user_id' => $userId]);
-        $pantry = [];
+        $items = [];
         foreach ($stmt->fetchAll() as $row) {
-            $pantry[(int) $row['ingredient_id']] = [
-                'name' => (string) $row['name'],
-                'amount' => number_format((float) $row['quantity'], 3, '.', ''),
-                'unit' => (string) $row['unit'],
-            ];
+            $items[] = new PantryItemDTO(
+                (int) $row['ingredient_id'],
+                (string) $row['name'],
+                Quantity::create(number_format((float) $row['quantity'], 3, '.', ''), (string) $row['unit']),
+            );
         }
-        return $pantry;
+        return $items;
+    }
+
+    public function saveQuantity(int $userId, int $ingredientId, Quantity $quantity): void
+    {
+        if ($userId < 1 || $ingredientId < 1) {
+            throw new \InvalidArgumentException('User and ingredient IDs must be positive');
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $find = $this->pdo->prepare(
+                'SELECT id FROM pantry_inventory
+                 WHERE user_id = :user_id AND ingredient_id = :ingredient_id
+                 ORDER BY id
+                 FOR UPDATE'
+            );
+            $find->execute([':user_id' => $userId, ':ingredient_id' => $ingredientId]);
+            $row = $find->fetch();
+            if ((float) $quantity->amount === 0.0) {
+                $delete = $this->pdo->prepare(
+                    'DELETE FROM pantry_inventory WHERE user_id = :user_id AND ingredient_id = :ingredient_id'
+                );
+                $delete->execute([':user_id' => $userId, ':ingredient_id' => $ingredientId]);
+            } elseif ($row === false) {
+                $insert = $this->pdo->prepare(
+                    'INSERT INTO pantry_inventory (user_id, ingredient_id, quantity, unit)
+                     VALUES (:user_id, :ingredient_id, :quantity, :unit)'
+                );
+                $insert->execute([
+                    ':user_id' => $userId,
+                    ':ingredient_id' => $ingredientId,
+                    ':quantity' => $quantity->amount,
+                    ':unit' => $quantity->unit,
+                ]);
+            } else {
+                $update = $this->pdo->prepare(
+                    'UPDATE pantry_inventory
+                     SET quantity = :quantity, unit = :unit
+                     WHERE user_id = :user_id AND ingredient_id = :ingredient_id'
+                );
+                $update->execute([
+                    ':quantity' => $quantity->amount,
+                    ':unit' => $quantity->unit,
+                    ':user_id' => $userId,
+                    ':ingredient_id' => $ingredientId,
+                ]);
+            }
+            $this->pdo->commit();
+        } catch (\Throwable $exception) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $exception;
+        }
     }
 }

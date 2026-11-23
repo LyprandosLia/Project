@@ -38,12 +38,14 @@ The FastAPI service provides typed JSON lookup endpoints:
 - `GET /health`
 
 Price and nutrition responses include source and fetched-at freshness
-metadata. Local fixture data is used when no provider is configured, so
-the API works without supermarket credentials. The primary live source is
-`https://posokanei.gov.gr/` (e-Καταναλωτής); no API key or account is
-required. `CATALOG_PRICE_SOURCE_URL` may override the source URL for testing.
-Nutrition data is fetched from the keyless Open Food Facts API, with local
-macros-per-100g fallback data for basic raw ingredients.
+metadata. For prices, the service tries the PosoKanei product search API
+(`https://api.posokanei.gov.gr/products/search`) and falls back to the bundled
+catalog estimates when the upstream request fails or has no comparable result.
+Fallback prices are labeled **Approximate local estimate** in the shopping list;
+they are not live retailer quotes. No supermarket API key is configured.
+`CATALOG_PRICE_SOURCE_URL` may override the API base URL or full search URL.
+Nutrition data uses the local catalog first and queries the keyless Open Food
+Facts API only for ingredients not found there.
 
 Run the standalone idempotent updater with:
 
@@ -91,12 +93,14 @@ service name and Traefik routing labels are retained.
 
 ## Weekly plan generation
 
-Open the dashboard through its existing Traefik route and use
-**Generate Weekly Plan**. The server runs the meal planner, recipe
-scaler, shopping optimizer, and nutrition feedback agent, with at most
-three plan attempts. Generated plans remain in the session only until
-the user chooses **Approve & Save Plan** or **Discard**. No plan is
-written to `meal_plans` during generation.
+Open the dashboard through its existing Traefik route. Save goals,
+allergies, dietary preferences, fasting times, and prep limits; maintain the
+pantry; then select breakfast, lunch, and/or dinner, servings, and whether
+missing ingredients may be purchased. **Generate Weekly Plan** runs the
+meal planner, recipe scaler, shopping optimizer, and nutrition feedback
+agent, with at most three plan attempts. Generated plans and their shopping
+lists remain in the session until approved or discarded. A rejected plan
+cannot be saved, and generation never writes to `meal_plans`.
 
 Set `LLM_API_KEY` to enable provider-backed JSON responses. When it is
 unset, the existing providers return the deterministic mock response,

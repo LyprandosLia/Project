@@ -71,6 +71,25 @@ final class RecipeRepository
         return $recipes;
     }
 
+    public function findAllIngredients(): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, name, canonical_unit
+             FROM ingredients
+             ORDER BY name'
+        );
+        $stmt->execute();
+        $ingredients = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $ingredients[] = [
+                'id' => (int) $row['id'],
+                'name' => (string) $row['name'],
+                'canonical_unit' => (string) $row['canonical_unit'],
+            ];
+        }
+        return $ingredients;
+    }
+
     public function findIngredients(int $recipeId): array
     {
         $stmt = $this->pdo->prepare(

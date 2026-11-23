@@ -52,7 +52,8 @@ if ($siteUser === '' || $sitePass === '' || !hash_equals($siteUser, $givenUser) 
 }
 
 $error = null;
-$success = null;
+$success = $_SESSION['flash_success'] ?? null;
+unset($_SESSION['flash_success']);
 $userId = 1;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -65,12 +66,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($action === 'add_item' && isset($_POST['name'])) {
                 add_item((string) $_POST['name'], (string) ($_POST['note'] ?? ''));
                 $success = 'Item added.';
+            } elseif ($action === 'save_profile') {
+                $calorieText = trim((string) ($_POST['daily_calorie_goal'] ?? ''));
+                $calorieGoal = $calorieText === '' ? null : filter_var($calorieText, FILTER_VALIDATE_INT);
+                if ($calorieText !== '' && $calorieGoal === false) {
+                    throw new InvalidArgumentException('Daily calorie goal must be a whole number.');
+                }
+
+                $proteinText = trim((string) ($_POST['daily_protein_goal_g'] ?? ''));
+                $proteinGoal = $proteinText === '' ? null : filter_var($proteinText, FILTER_VALIDATE_FLOAT);
+                if ($proteinText !== '' && $proteinGoal === false) {
+                    throw new InvalidArgumentException('Daily protein goal must be a number.');
+                }
+
+                $maxPrepText = trim((string) ($_POST['max_prep_minutes'] ?? ''));
+                $maxPrepMinutes = $maxPrepText === '' ? null : filter_var($maxPrepText, FILTER_VALIDATE_INT);
+                if ($maxPrepText !== '' && $maxPrepMinutes === false) {
+                    throw new InvalidArgumentException('Maximum preparation time must be a whole number.');
+                }
+
+                $allergies = preg_split('/[,\r\n]+/', (string) ($_POST['allergies'] ?? '')) ?: [];
+                $allergies = array_values(array_unique(array_filter(
+                    array_map('trim', $allergies),
+                    static fn (string $allergen): bool => $allergen !== '',
+                )));
+                $profile = \App\DTO\UserProfileDTO::fromArray([
+                    'user_id' => $userId,
+                    'allergies' => $allergies,
+                    'preferences' => [
+                        'daily_calorie_goal' => $calorieGoal,
+                        'daily_protein_goal_g' => $proteinGoal,
+                        'dietary_notes' => trim((string) ($_POST['dietary_notes'] ?? '')),
+                    ],
+                    'max_prep_minutes' => $maxPrepMinutes,
+                    'fasting_start' => trim((string) ($_POST['fasting_start'] ?? '')) ?: null,
+                    'fasting_end' => trim((string) ($_POST['fasting_end'] ?? '')) ?: null,
+                ]);
+                (new UserRepository(get_db()))->saveProfile($profile);
+                $success = 'Your goals and food preferences have been saved.';
+            } elseif ($action === 'save_pantry') {
+                $ingredientId = filter_var($_POST['ingredient_id'] ?? null, FILTER_VALIDATE_INT);
+                if ($ingredientId === false || $ingredientId === null || $ingredientId < 1) {
+                    throw new InvalidArgumentException('Choose a valid pantry ingredient.');
+                }
+                $quantity = \App\DTO\Quantity::fromArray([
+                    'amount' => trim((string) ($_POST['quantity'] ?? '')),
+                    'unit' => trim((string) ($_POST['unit'] ?? '')),
+                ]);
+                (new PantryRepository(get_db()))->saveQuantity($userId, $ingredientId, $quantity);
+                $success = (float) $quantity->amount === 0.0
+                    ? 'Pantry stock removed.'
+                    : 'Pantry stock saved.';
             } elseif ($action === 'generate') {
                 $pdo = get_db();
                 $users = new UserRepository($pdo);
                 $recipes = new RecipeRepository($pdo);
                 $pantry = new PantryRepository($pdo);
                 $llm = new LlmClient();
+                $catalog = new CatalogApiClient();
                 $profile = $users->findProfile($userId);
                 if ($profile === null) {
                     throw new RuntimeException('User profile was not found.');
@@ -78,17 +131,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $orchestrator = new Orchestrator(
                     new MealPlannerAgent($users, $recipes, $llm),
                     new RecipeSpecialistAgent($recipes),
-                    new ShoppingOptimizerAgent($pantry, new CatalogApiClient()),
-                    new NutritionFeedbackAgent($users),
+                    new ShoppingOptimizerAgent($pantry, $catalog),
+                    new NutritionFeedbackAgent($users, $catalog),
+                    $pantry,
                 );
-                $startsOn = (string) ($_POST['starts_on'] ?? date('Y-m-d'));
-                $startsOn = (new DateTimeImmutable($startsOn))->format('Y-m-d');
-                $_SESSION['generated_result'] = $orchestrator->run($profile, $startsOn);
+                if (!is_array($_POST['meal_slots'] ?? null)) {
+                    throw new InvalidArgumentException('Choose at least one meal slot.');
+                }
+                $request = \App\DTO\MealPlanRequestDTO::fromArray([
+                    'starts_on' => (string) ($_POST['starts_on'] ?? ''),
+                    'meal_slots' => $_POST['meal_slots'],
+                    'servings' => $_POST['servings'] ?? null,
+                    'purchase_mode' => (string) ($_POST['purchase_mode'] ?? ''),
+                ]);
+                $_SESSION['generated_result'] = $orchestrator->run($profile, $request);
                 $success = 'Weekly plan generated for review. Nothing has been saved.';
             } elseif ($action === 'approve') {
                 $result = $_SESSION['generated_result'] ?? null;
                 if (!$result instanceof \App\DTO\OrchestrationResultDTO) {
                     throw new RuntimeException('No generated plan is awaiting approval.');
+                }
+                if (!$result->validation->approved) {
+                    throw new RuntimeException('A plan that failed nutrition validation cannot be saved. Revise your profile or discard it.');
                 }
                 $planId = (new MealPlanRepository(get_db()))->saveApproved($result->plan);
                 unset($_SESSION['generated_result']);
@@ -110,16 +174,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
     if ($error === null) {
+        if ($success !== null) {
+            $_SESSION['flash_success'] = $success;
+        }
         header('Location: /');
         exit;
     }
 }
 
+$pdo = get_db();
+$users = new UserRepository($pdo);
+$profile = $users->findProfile($userId);
+if ($profile === null) {
+    throw new RuntimeException('User profile was not found.');
+}
+$recipeRepository = new RecipeRepository($pdo);
+$ingredientCatalog = $recipeRepository->findAllIngredients();
+$pantryItems = (new PantryRepository($pdo))->findItemsByUser($userId);
 $items = get_items();
 $generatedResult = $_SESSION['generated_result'] ?? null;
 $savedMeals = [];
 try {
-    $savedMeals = (new MealPlanRepository(get_db()))->findSavedMeals($userId);
+    $savedMeals = (new MealPlanRepository($pdo))->findSavedMeals($userId);
 } catch (Throwable $exception) {
     $savedMeals = [];
 }

@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 /** @var array $items */
 /** @var array $savedMeals */
+/** @var array $ingredientCatalog */
+/** @var array $pantryItems */
 /** @var string $csrfToken */
 /** @var string|null $error */
 /** @var string|null $success */
+/** @var App\DTO\UserProfileDTO $profile */
 /** @var App\DTO\OrchestrationResultDTO|null $generatedResult */
 
 $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+$supportedUnits = ['g', 'kg', 'ml', 'l', 'piece'];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -32,6 +36,11 @@ $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, 
     table { width: 100%; border-collapse: collapse; }
     th,td { text-align: left; border-bottom: 1px solid #e5e7eb; padding: 8px; vertical-align: top; }
     input,textarea,select,button { box-sizing: border-box; padding: 8px; }
+    label { display: inline-flex; flex-direction: column; gap: 5px; margin: 6px 12px 6px 0; }
+    .choices { display: flex; flex-wrap: wrap; gap: 12px; margin: 10px 0; }
+    .choices label { flex-direction: row; align-items: center; }
+    .hint { color: #475569; font-size: 14px; }
+    .pantry-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
     button { border: 0; border-radius: 6px; background: #2563eb; color: white; cursor: pointer; }
     button.secondary { background: #64748b; }
     button.danger { background: #dc2626; }
@@ -45,13 +54,123 @@ $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, 
   <?php if ($success !== null): ?><p class="success"><?= $escape($success) ?></p><?php endif; ?>
 
   <section class="card">
+    <h2>Your goals and food preferences</h2>
+    <p class="hint">These settings are saved to your user profile and used each time you generate a plan.</p>
+    <p class="hint">Fasting checks use approximate meal times: breakfast 08:00, lunch 13:00, and dinner 19:00. Dietary restrictions are enforced for supported terms such as vegan, vegetarian, gluten-free, and dairy-free.</p>
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="<?= $escape($csrfToken) ?>">
+      <input type="hidden" name="action" value="save_profile">
+      <div class="grid">
+        <label>Daily calorie goal (kcal)
+          <input type="number" name="daily_calorie_goal" min="500" max="10000" step="1"
+                 value="<?= $escape((string) ($profile->preferences['daily_calorie_goal'] ?? '')) ?>">
+        </label>
+        <label>Daily protein goal (g)
+          <input type="number" name="daily_protein_goal_g" min="1" max="1000" step="0.1"
+                 value="<?= $escape((string) ($profile->preferences['daily_protein_goal_g'] ?? '')) ?>">
+        </label>
+        <label>Maximum preparation time (minutes)
+          <input type="number" name="max_prep_minutes" min="1" max="600" step="1"
+                 value="<?= $escape((string) ($profile->maxPrepMinutes ?? '')) ?>">
+        </label>
+        <label>Fasting starts
+          <input type="time" name="fasting_start" value="<?= $escape($profile->fastingStart ?? '') ?>">
+        </label>
+        <label>Fasting ends
+          <input type="time" name="fasting_end" value="<?= $escape($profile->fastingEnd ?? '') ?>">
+        </label>
+      </div>
+      <label>Allergies (separate with commas or new lines)
+        <textarea name="allergies" rows="3" placeholder="For example: peanuts, shellfish"><?= $escape(implode(', ', $profile->allergies)) ?></textarea>
+      </label>
+      <label>Dietary restrictions and preferences
+        <textarea name="dietary_notes" rows="3" maxlength="2000"
+                  placeholder="For example: vegan, vegetarian, gluten-free, dairy-free; other preferences"><?= $escape((string) ($profile->preferences['dietary_notes'] ?? '')) ?></textarea>
+      </label>
+      <button type="submit">Save Profile</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Your Pantry</h2>
+    <p class="hint">Keep quantities current. A quantity of 0 removes that ingredient. Pantry-only plans require enough stock for every selected meal.</p>
+    <?php if ($pantryItems === []): ?>
+      <p>Your pantry is empty. Add ingredients below before choosing pantry-only planning.</p>
+    <?php else: ?>
+      <table>
+        <thead><tr><th>Ingredient</th><th>Current stock</th><th>Update quantity and unit</th></tr></thead>
+        <tbody>
+        <?php foreach ($pantryItems as $pantryItem): ?>
+          <tr>
+            <td><?= $escape($pantryItem->name) ?></td>
+            <td><?= $escape($pantryItem->quantity->amount) ?> <?= $escape($pantryItem->quantity->unit) ?></td>
+            <td>
+              <form method="post" class="pantry-form">
+                <input type="hidden" name="csrf_token" value="<?= $escape($csrfToken) ?>">
+                <input type="hidden" name="action" value="save_pantry">
+                <input type="hidden" name="ingredient_id" value="<?= $escape((string) $pantryItem->ingredientId) ?>">
+                <input type="number" name="quantity" min="0" step="0.001" required
+                       value="<?= $escape($pantryItem->quantity->amount) ?>" aria-label="Quantity for <?= $escape($pantryItem->name) ?>">
+                <select name="unit" aria-label="Unit for <?= $escape($pantryItem->name) ?>">
+                  <?php foreach ($supportedUnits as $unit): ?>
+                    <option value="<?= $escape($unit) ?>" <?= $pantryItem->quantity->unit === $unit ? 'selected' : '' ?>><?= $escape($unit) ?></option>
+                  <?php endforeach; ?>
+                </select>
+                <button type="submit">Update</button>
+              </form>
+            </td>
+          </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
+    <?php endif; ?>
+    <?php if ($ingredientCatalog !== []): ?>
+      <h3>Add pantry ingredient</h3>
+      <form method="post" class="pantry-form">
+        <input type="hidden" name="csrf_token" value="<?= $escape($csrfToken) ?>">
+        <input type="hidden" name="action" value="save_pantry">
+        <select name="ingredient_id" required aria-label="Ingredient" data-pantry-ingredient>
+          <?php foreach ($ingredientCatalog as $ingredient): ?>
+            <option value="<?= $escape((string) $ingredient['id']) ?>"
+                    data-unit="<?= $escape($ingredient['canonical_unit']) ?>"><?= $escape($ingredient['name']) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <input type="number" name="quantity" min="0.001" step="0.001" required value="1" aria-label="Quantity">
+        <select name="unit" aria-label="Unit" data-pantry-unit>
+          <?php foreach ($supportedUnits as $unit): ?>
+            <option value="<?= $escape($unit) ?>"><?= $escape($unit) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <button type="submit">Add or Update Stock</button>
+      </form>
+      <p class="hint">Adding an ingredient already listed above replaces its saved quantity.</p>
+    <?php endif; ?>
+  </section>
+
+  <section class="card">
     <h2>Generate Weekly Plan</h2>
+    <p class="hint">Select the meal types you want for each day of the 7-day plan.</p>
     <form method="post">
       <input type="hidden" name="csrf_token" value="<?= $escape($csrfToken) ?>">
       <input type="hidden" name="action" value="generate">
       <label>Start date
         <input type="date" name="starts_on" value="<?= $escape(date('Y-m-d')) ?>">
       </label>
+      <label>Servings per meal
+        <input type="number" name="servings" min="1" max="20" value="2" required>
+      </label>
+      <div class="choices" role="group" aria-label="Meal types">
+        <?php foreach (['breakfast' => 'Breakfast', 'lunch' => 'Lunch', 'dinner' => 'Dinner'] as $slot => $label): ?>
+          <label><input type="checkbox" name="meal_slots[]" value="<?= $escape($slot) ?>" <?= $slot === 'dinner' ? 'checked' : '' ?>> <?= $escape($label) ?></label>
+        <?php endforeach; ?>
+      </div>
+      <fieldset>
+        <legend>Shopping choice</legend>
+        <div class="choices">
+          <label><input type="radio" name="purchase_mode" value="pantry_only"> Use only current pantry quantities</label>
+          <label><input type="radio" name="purchase_mode" value="allow_missing" checked> I can buy missing ingredients; make a shopping list</label>
+        </div>
+      </fieldset>
       <button type="submit">Generate Weekly Plan</button>
     </form>
   </section>
@@ -74,14 +193,19 @@ $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, 
       <h2>Proposed Weekly Meal Plan</h2>
       <p><strong>Attempts:</strong> <?= $escape((string) $generatedResult->attempts) ?> ·
          <strong>Validation:</strong> <?= $generatedResult->validation->approved ? 'Approved' : 'Needs revision' ?></p>
+      <?php if ($generatedResult->validation->issues !== []): ?>
+        <ul class="error">
+          <?php foreach ($generatedResult->validation->issues as $issue): ?><li><?= $escape($issue) ?></li><?php endforeach; ?>
+        </ul>
+      <?php endif; ?>
       <table>
-        <thead><tr><th>Date</th><th>Slot</th><th>Recipe ID</th><th>Servings</th></tr></thead>
+        <thead><tr><th>Date</th><th>Meal</th><th>Recipe</th><th>Servings</th></tr></thead>
         <tbody>
-        <?php foreach ($plan->meals as $meal): ?>
+        <?php foreach ($plan->meals as $mealIndex => $meal): ?>
           <tr>
             <td><?= $escape($meal->date) ?></td>
             <td><?= $escape($meal->slot) ?></td>
-            <td><?= $escape((string) $meal->recipeId) ?></td>
+            <td><?= $escape($generatedResult->scaledRecipes[$mealIndex]->name ?? ('Recipe #' . $meal->recipeId)) ?></td>
             <td><?= $escape((string) $meal->servings) ?></td>
           </tr>
         <?php endforeach; ?>
@@ -104,6 +228,7 @@ $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, 
 
     <section class="card">
       <h2>Optimized Shopping List</h2>
+      <p class="hint">Prices are estimates when the live PosoKanei product search is unavailable. Check each item's source; approximate local catalog prices are labeled explicitly.</p>
       <table>
         <thead><tr><th>Item</th><th>Need</th><th>EUR</th><th>Source</th></tr></thead>
         <tbody>
@@ -115,6 +240,9 @@ $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, 
             <td><?= $escape($item->priceSource ?? 'Catalog unavailable') ?></td>
           </tr>
         <?php endforeach; ?>
+        <?php if ($generatedResult->shoppingList->items === []): ?>
+          <tr><td colspan="4">No purchases are required for this plan.</td></tr>
+        <?php endif; ?>
         </tbody>
       </table>
       <p><strong>Estimated total: <?= $escape(number_format($generatedResult->shoppingList->estimatedTotal, 2)) ?> EUR</strong></p>
@@ -124,12 +252,13 @@ $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, 
       <h2>Human Approval Gate</h2>
       <?php if (!$generatedResult->validation->approved): ?>
         <p class="error">This plan exhausted the 3-attempt feedback limit. Review and revise the constraints or discard it.</p>
+      <?php else: ?>
+        <form method="post" class="inline">
+          <input type="hidden" name="csrf_token" value="<?= $escape($csrfToken) ?>">
+          <input type="hidden" name="action" value="approve">
+          <button type="submit">Approve &amp; Save Plan</button>
+        </form>
       <?php endif; ?>
-      <form method="post" class="inline">
-        <input type="hidden" name="csrf_token" value="<?= $escape($csrfToken) ?>">
-        <input type="hidden" name="action" value="approve">
-        <button type="submit">Approve &amp; Save Plan</button>
-      </form>
       <form method="post" class="inline">
         <input type="hidden" name="csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="action" value="discard">
@@ -162,7 +291,7 @@ $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, 
   </section>
 
   <section class="card">
-    <h2>Pantry &amp; Legacy Items</h2>
+    <h2>Legacy Demo Items</h2>
     <?php foreach ($items as $item): ?>
       <p><strong><?= $escape($item['name']) ?></strong><?php if (!empty($item['note'])): ?> — <?= $escape($item['note']) ?><?php endif; ?></p>
     <?php endforeach; ?>
@@ -175,5 +304,19 @@ $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, 
     </form>
   </section>
 </main>
+<script>
+  const pantryIngredient = document.querySelector('[data-pantry-ingredient]');
+  const pantryUnit = document.querySelector('[data-pantry-unit]');
+  if (pantryIngredient && pantryUnit) {
+    const syncPantryUnit = () => {
+      const unit = pantryIngredient.selectedOptions[0]?.dataset.unit;
+      if (unit && [...pantryUnit.options].some((option) => option.value === unit)) {
+        pantryUnit.value = unit;
+      }
+    };
+    pantryIngredient.addEventListener('change', syncPantryUnit);
+    syncPantryUnit();
+  }
+</script>
 </body>
 </html>

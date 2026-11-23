@@ -18,6 +18,7 @@ use App\Agents\RecipeSpecialistAgent;
 use App\Agents\ShoppingOptimizerAgent;
 use App\Agents\NutritionFeedbackAgent;
 use App\Agents\Orchestrator;
+use App\DTO\MealPlanRequestDTO;
 use App\Repository\MealPlanRepository;
 use App\Repository\PantryRepository;
 use App\Repository\RecipeRepository;
@@ -61,9 +62,16 @@ try {
         new MealPlannerAgent($users, $recipes, $llm),
         new RecipeSpecialistAgent($recipes),
         new ShoppingOptimizerAgent($pantry, $catalog),
-        new NutritionFeedbackAgent($users),
+        new NutritionFeedbackAgent($users, $catalog),
+        $pantry,
     );
-    $result = $orchestrator->run($profile, date('Y-m-d'));
+    $request = new MealPlanRequestDTO(
+        date('Y-m-d'),
+        ['dinner'],
+        2,
+        MealPlanRequestDTO::PURCHASE_ALLOW_MISSING,
+    );
+    $result = $orchestrator->run($profile, $request);
     $plan = $result->plan;
     $scaledRecipes = $result->scaledRecipes;
     $shoppingList = $result->shoppingList;

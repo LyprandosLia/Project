@@ -1,10 +1,9 @@
 # Multi-Agent Food OS - Architecture Guide
 
-This document describes the repository as it is implemented now. In particular,
-the catalog API has both price and nutrition endpoints, but the current PHP
-weekly-plan workflow calls only the price endpoint. Agent 4 currently computes
-nutrition estimates in PHP; it does not call Open Food Facts or use its prompt
-to make a provider request.
+This document describes the repository as it is implemented now. The PHP
+weekly-plan workflow calls the FastAPI price endpoint through Agent 3 and the
+nutrition endpoint through Agent 4. Local catalog fixtures provide explicit
+approximate-price fallback when PosoKanei has no usable response.
 
 ## 1. Complete directory tree
 
@@ -76,8 +75,10 @@ The tree below excludes `.git/` and `vendor/`, but includes the generated
 |   |-- DTO/
 |   |   |-- AgentStepLogDTO.php
 |   |   |-- MealPlanDTO.php
+|   |   |-- MealPlanRequestDTO.php
 |   |   |-- MealSelectionDTO.php
 |   |   |-- OrchestrationResultDTO.php
+|   |   |-- PantryItemDTO.php
 |   |   |-- Quantity.php
 |   |   |-- RecipeDTO.php
 |   |   |-- RecipeIngredientDTO.php
@@ -116,10 +117,12 @@ The tree below excludes `.git/` and `vendor/`, but includes the generated
 | `views/dashboard.php` | Escaped HTML for the legacy items UI and the plan generation, trace, plan, shopping, approval, and rating panels. |
 | `bin/test-phase3.php` | Standalone database-backed orchestration check; reads the profile for user 1, runs the pipeline, and emits a compact JSON result. |
 | `src/Agents/Orchestrator.php` | Agent 0: executes Agents 1-4 in sequence, records trace entries, sends validation feedback to the planner, and caps total attempts at three. |
-| `src/Agents/MealPlannerAgent.php` | Agent 1: filters recipes against allergy and prep-time constraints, considers recent recipe IDs, then generates and validates a dated meal plan. |
+| `src/Agents/MealPlannerAgent.php` | Agent 1: filters by allergies, supported dietary terms, prep limits, recent/low ratings, fasting windows, and pantry feasibility; generates and validates the requested seven-day slot schedule. |
 | `src/Agents/RecipeSpecialistAgent.php` | Agent 2: fetches each selected recipe and deterministically scales its ingredient quantities to target servings. |
 | `src/Agents/ShoppingOptimizerAgent.php` | Agent 3: aggregates scaled ingredients, subtracts compatible pantry quantities, requests catalog prices, and returns a shopping list and EUR total. |
-| `src/Agents/NutritionFeedbackAgent.php` | Agent 4: checks allergies, recipe variety, low ratings, and heuristic calorie/protein estimates; returns approval status and revision feedback. |
+| `src/Agents/NutritionFeedbackAgent.php` | Agent 4: checks allergy/dietary conflicts, variety, low ratings, and goals using catalog nutrition data; returns approval status and revision feedback. |
+| `src/DTO/MealPlanRequestDTO.php` | Validates the requested start date, selected meal slots, servings, and pantry-only versus purchase-allowed mode. |
+| `src/DTO/PantryItemDTO.php` | Typed user pantry row containing its ingredient ID, name, and quantity. |
 | `src/DTO/UserProfileDTO.php` | Read-only user identity, allergy, preference, prep-time, and fasting-window data passed to agents. |
 | `src/DTO/RecipeDTO.php` | Read-only recipe metadata and typed ingredient collection loaded by the recipe repository. |
 | `src/DTO/RecipeIngredientDTO.php` | Ingredient identity/name, quantity, and optional recipe notes. |
@@ -133,9 +136,9 @@ The tree below excludes `.git/` and `vendor/`, but includes the generated
 | `src/DTO/ValidationResultDTO.php` | Agent 4's approval boolean, issues, feedback, and nutrition summary. |
 | `src/DTO/AgentStepLogDTO.php` | Trace step identity, action, status, attempt, timestamp, duration, detail, and optional EUR total. |
 | `src/DTO/OrchestrationResultDTO.php` | Complete review payload returned by Agent 0: plan, scaled recipes, shopping list, validation, trace, and attempt count. |
-| `src/Repository/UserRepository.php` | Reads profile, preferences, allergies, recent recipe IDs, and ratings; upserts user ratings. |
-| `src/Repository/RecipeRepository.php` | Reads recipe records and their ingredient rows and converts them into recipe DTOs. |
-| `src/Repository/PantryRepository.php` | Reads inventory quantities for a user, keyed by ingredient ID. |
+| `src/Repository/UserRepository.php` | Reads and transactionally saves profile preferences/allergies; reads recent recipe IDs and ratings and upserts user ratings. |
+| `src/Repository/RecipeRepository.php` | Reads recipe records/ingredient rows into DTOs and loads the canonical ingredient list for pantry editing. |
+| `src/Repository/PantryRepository.php` | Reads typed inventory and transactionally inserts, updates, or removes a user's ingredient quantities. |
 | `src/Repository/MealPlanRepository.php` | Transactionally saves draft/approved plans and loads approved saved meals with ratings. |
 | `src/Service/LlmClient.php` | Provider-neutral structured-JSON chat client; uses a deterministic supplied mock when `LLM_API_KEY` is empty. |
 | `src/Service/CatalogApiClient.php` | HTTP/JSON client for the internal FastAPI price and nutrition endpoints. |
@@ -154,11 +157,12 @@ The tree below excludes `.git/` and `vendor/`, but includes the generated
 | `services/catalog-api/app/main.py` | FastAPI health, price, and nutrition routes; performs unit conversion, fixture/provider lookup, and response construction. |
 | `services/catalog-api/app/models.py` | Pydantic request/response models and supported-unit declarations for both API families. |
 | `services/catalog-api/app/catalog_store.py` | Loads fixture data, normalizes ingredient names, reads/writes the price cache, and supplies source/freshness metadata. |
-| `services/catalog-api/app/provider.py` | Fetches keyless price data from PosoKanei and parses supported JSON/HTML shapes with bounded HTTP timeouts. |
+| `services/catalog-api/app/provider.py` | Posts bounded-time product searches to PosoKanei's JSON endpoint, normalizes comparable unit prices, and rejects incomplete matches for fixture fallback. |
 | `services/catalog-api/app/nutrition_provider.py` | Queries Open Food Facts for per-100g nutrients and normalizes its response. |
 | `services/catalog-api/app/updater.py` | Command-line updater that validates provider records and atomically replaces the fixture when data changes. |
 | `services/catalog-api/app/catalog.json` | Local EUR price and per-100g nutrition fixtures used as fallback data. |
 | `services/catalog-api/tests/test_catalog_api.py` | API tests for health, fixture price/nutrition lookups, not-found ingredients, and invalid input. |
+| `services/catalog-api/tests/test_provider.py` | Mocked provider tests for the PosoKanei search request and package-to-base-unit price conversion. |
 | `services/catalog-api/tests/test_updater.py` | Updater test using a fixture provider to exercise update and failure reporting. |
 | `services/catalog-api/.pytest_cache/.gitignore` | Generated pytest cache metadata, not application code. |
 | `services/catalog-api/.pytest_cache/CACHEDIR.TAG` | Generated marker identifying the pytest cache directory. |
@@ -253,43 +257,42 @@ does not persist those changes back into the image or a mounted host file.
 
 ### Generate Weekly Plan
 
-1. The browser submits a POST containing `action=generate`, a start date, and
-   the session CSRF token. `app/index.php` first checks Basic Auth and compares
-   the posted token with the session token. The current demo controller uses
-   `userId = 1`.
-2. The controller creates the PDO-backed repositories and service clients,
-   then calls `UserRepository::findProfile(1)`. This is the first planning
-   database access: it checks `users`, reads `user_preferences`, and reads
-   `user_allergies`, then constructs a `UserProfileDTO`.
-3. The controller calls `Orchestrator::run(UserProfileDTO, startsOn)`.
-   Agent 0 initializes a trace and begins attempt 1.
-4. **Agent 1 - MealPlanner** calls `RecipeRepository::findAll()` to load
-   recipes and ingredients as `RecipeDTO` and `RecipeIngredientDTO` values,
-   then calls `UserRepository::findRecentRecipeIds()`. It filters recipes by
-   allergy-name matches and maximum preparation time, creates planner input
-   from the profile, allowed recipes, recent IDs, start date, and any prior
-   validation feedback, and produces a `MealPlanDTO`. That object contains
-   the user ID, start/end dates, and `MealSelectionDTO[]` (date, slot, recipe
-   ID, servings).
+1. The browser submits `action=generate`, a start date, selected meal slots,
+   servings, purchase mode, and the session CSRF token. `app/index.php` checks
+   Basic Auth and CSRF, then validates the fields into a `MealPlanRequestDTO`.
+   The current demo controller uses `userId = 1`.
+2. The controller calls `UserRepository::findProfile(1)`, the first planning
+   database access. It reads `users`, `user_preferences`, and
+   `user_allergies` into a `UserProfileDTO`; it also reads the user's pantry
+   inventory before invoking the orchestrator.
+3. The controller calls `Orchestrator::run(UserProfileDTO, MealPlanRequestDTO)`.
+   Agent 0 begins attempt 1 and retains the profile, request, and pantry
+   inventory as input to the planning loop.
+4. **Agent 1 - MealPlanner** calls `RecipeRepository::findAll()` for recipes
+   and ingredient DTOs, then `UserRepository::findRecentRecipeIds()`. It
+   filters by allergies, supported dietary terms, prep limits, recent meals,
+   meal-slot timing, and pantry feasibility when pantry-only mode is selected.
+   It passes profile goals/preferences, the chosen meal slots, servings,
+   shopping mode, recipes, and any earlier nutrition feedback to the planner
+   and validates the returned `MealPlanDTO` schedule.
 5. **Agent 2 - RecipeSpecialist** receives each `MealSelectionDTO` and the
-   user's maximum prep time. For each selection, it queries
-   `RecipeRepository::findById()`, scales each ingredient using deterministic
-   integer arithmetic, and returns a `ScaledRecipeDTO` containing
-   `ScaledIngredientDTO[]` with `Quantity` values.
+   user's prep limit. For each selection, it queries
+   `RecipeRepository::findById()`, scales ingredient quantities for servings,
+   and returns a `ScaledRecipeDTO` with typed ingredient quantities.
 6. **Agent 3 - ShoppingOptimizer** receives the user ID and
-   `ScaledRecipeDTO[]`. It queries `PantryRepository::findQuantitiesByUser()`,
-   aggregates by ingredient and compatible base unit, subtracts pantry stock,
-   and calls `CatalogApiClient::getPrice()` for each remaining purchase. The
-   PHP client posts ingredient/quantity/unit JSON to the internal FastAPI
-   `/prices` endpoint. FastAPI consults its fresh price cache, attempts the
-   PosoKanei provider, and falls back to the local catalog fixture when the
-   provider raises `UpstreamError`. The optimizer returns a
-   `ShoppingListDTO` containing `ShoppingItemDTO[]`, optional per-item price
-   metadata, and the estimated EUR total.
-7. **Agent 4 - NutritionFeedback** receives the same `UserProfileDTO`,
-   `MealPlanDTO`, and `ScaledRecipeDTO[]`, then queries
-   `UserRepository::findRatingsByUser()`. It returns a `ValidationResultDTO`
-   with approval, issues, concrete revision feedback, and a summary.
+   `ScaledRecipeDTO[]`. It aggregates ingredients, queries current pantry
+   quantities, subtracts compatible stock, then calls `CatalogApiClient` for
+   each remaining purchase. The client posts ingredient/quantity/unit JSON to
+   FastAPI `/prices`. FastAPI checks the 24-hour price cache, posts product
+   search requests to PosoKanei, and falls back to the local catalog on
+   upstream failure or no comparable item. Fixture rows are labeled
+   **Approximate local estimate**. The resulting `ShoppingListDTO` contains
+   purchase quantities, optional item prices and source labels, and a total.
+7. **Agent 4 - NutritionFeedback** receives `UserProfileDTO`, `MealPlanDTO`,
+   and `ScaledRecipeDTO[]`; it queries saved ratings and the FastAPI nutrition
+   endpoint for recipe ingredients. It validates calorie/protein goals and
+   supported dietary terms, returning a `ValidationResultDTO` with approval,
+   issues, feedback, and nutrition summary.
 8. Agent 0 records an `AgentStepLogDTO` for each agent and attempt. If
    validation rejects the plan, it passes the feedback string to Agent 1 and
    reruns the four agents. The total attempt limit is three, not three retries
@@ -305,11 +308,11 @@ does not persist those changes back into the image or a mounted host file.
 
 | Stage | Input | Output |
 |---|---|---|
-| Agent 0 / `Orchestrator::run` | `UserProfileDTO`, start-date string | `OrchestrationResultDTO` containing plan, `ScaledRecipeDTO[]`, `ShoppingListDTO`, `ValidationResultDTO`, `AgentStepLogDTO[]`, and attempts |
-| Agent 1 / `MealPlannerAgent::propose` | `UserProfileDTO`, start date, optional prior feedback | `MealPlanDTO` with `MealSelectionDTO[]` |
+| Agent 0 / `Orchestrator::run` | `UserProfileDTO`, `MealPlanRequestDTO` (start date, slots, servings, shopping mode), pantry items | `OrchestrationResultDTO` containing plan, scaled recipes, shopping list, validation, trace, and attempts |
+| Agent 1 / `MealPlannerAgent::propose` | `UserProfileDTO`, request DTO, pantry items, optional prior feedback | `MealPlanDTO` with one `MealSelectionDTO` per selected day/slot |
 | Agent 2 / `RecipeSpecialistAgent::scale` | One `MealSelectionDTO`, optional prep limit | One `ScaledRecipeDTO` with typed scaled ingredient quantities |
 | Agent 3 / `ShoppingOptimizerAgent::optimize` | User ID and `ScaledRecipeDTO[]` | `ShoppingListDTO` with `ShoppingItemDTO[]` and EUR total |
-| Agent 4 / `NutritionFeedbackAgent::validate` | `UserProfileDTO`, `MealPlanDTO`, `ScaledRecipeDTO[]` | `ValidationResultDTO` with decision, issue list, feedback, and summary |
+| Agent 4 / `NutritionFeedbackAgent::validate` | `UserProfileDTO`, `MealPlanDTO`, `ScaledRecipeDTO[]`; catalog nutrition responses | `ValidationResultDTO` with decision, issue list, feedback, and summary |
 
 DTOs are immutable and validate their main data shapes at construction or
 decoding boundaries. Provider output is decoded and checked by `LlmClient` and
@@ -318,16 +321,21 @@ planner's allowed recipe set.
 
 ### What the catalog and nutrition boundary currently does
 
-The PHP shopping workflow currently calls only the FastAPI **price** endpoint.
-FastAPI's price provider queries `https://posokanei.gov.gr/` without an API key,
-uses a 24-hour local price cache, and has seeded fixture fallback data.
+The PHP shopping workflow calls FastAPI's **price** endpoint. FastAPI checks a
+24-hour price cache, posts a product search to
+`https://api.posokanei.gov.gr/products/search`, and falls back to local catalog
+prices when the upstream request fails or has no matching comparable product.
+Local estimates are labeled `Approximate local estimate`; a live quote is
+identified as `posokanei.gov.gr`. The upstream response contract and price-unit
+semantics have not been independently validated against a live response, so
+verify these before relying on live estimates.
 
-FastAPI also implements price and nutrition GET/POST routes. Its nutrition
-lookup tries the local fixture first and calls Open Food Facts only when the
-ingredient is not in that fixture. `CatalogApiClient` has a nutrition method,
-but no current agent calls it. Agent 4 instead estimates calories and protein
-with simple PHP name/unit heuristics. Consequently, Open Food Facts is not in
-the current weekly-plan execution path.
+Nutrition lookup uses local fixture data first and calls Open Food Facts for
+ingredients absent from the fixture. Agent 4 calls the catalog nutrition
+endpoint for recipe ingredients and rejects incomplete lookups rather than
+silently treating missing nutrition as zero. The dashboard's generated
+shopping list shows the source for every available price; missing quotes are
+displayed as unavailable.
 
 ### Approve & Save Plan and ratings
 
@@ -359,12 +367,12 @@ table.
 |---|---|---|
 | `items` | Legacy demo item name/note rows. | `app/db.php`: `get_items()` reads; `add_item()` inserts. |
 | `users` | User identity and display name. | `UserRepository::findProfile()` reads; schema seeds demo user 1. |
-| `user_preferences` | Calorie/protein targets, prep limit, fasting times, and dietary notes. | `UserRepository::findProfile()` reads; schema seeds demo settings. No application write method currently exists. |
-| `user_allergies` | Per-user allergy terms. | `UserRepository::findProfile()` reads; schema seeds a development allergy. |
+| `user_preferences` | Calorie/protein targets, prep limit, fasting times, and dietary notes. | `UserRepository::findProfile()` reads and `saveProfile()` transactionally writes; schema seeds demo settings. |
+| `user_allergies` | Per-user allergy terms. | `UserRepository::findProfile()` reads and `saveProfile()` replaces a user's allergy rows; schema seeds a development allergy. |
 | `ingredients` | Canonical ingredient names and units. | `RecipeRepository` and `PantryRepository` join it for names; schema seeds ingredients. No application write method currently exists. |
 | `recipes` | Recipe descriptions, prep time, base servings, and instructions. | `RecipeRepository` reads; schema seeds three recipes. |
 | `recipe_ingredients` | Recipe-to-ingredient quantities and units. | `RecipeRepository::findIngredients()` reads; schema seeds recipe contents. |
-| `pantry_inventory` | User-owned ingredient amounts and units. | `PantryRepository::findQuantitiesByUser()` reads; schema seeds demo inventory. No application write method currently exists. |
+| `pantry_inventory` | User-owned ingredient amounts and units. | `PantryRepository` reads inventory and transactionally inserts, updates, or removes it; schema seeds demo inventory. |
 | `meal_plans` | Plan owner, date range, and `draft`/`approved` state. | `MealPlanRepository::saveDraft()` and `saveApproved()` write; `findSavedMeals()` and `UserRepository::findRecentRecipeIds()` read through joins. |
 | `planned_meals` | Meal selections linked to a plan and recipe. | `MealPlanRepository` inserts on save; saved-meal and recent-history queries read it. |
 | `ratings` | One 1-5 rating per user/recipe, optional comment. | `UserRepository::findRatingsByUser()` and `MealPlanRepository::findSavedMeals()` read; `UserRepository::saveRating()` inserts or updates. |
@@ -383,7 +391,7 @@ not automatically alter an already-populated MariaDB data directory.
 | `DB_NAME`, `DB_USER`, `DB_PASSWORD` | PHP PDO connection and MariaDB database/user credentials. |
 | `DB_ROOT_PASSWORD` | MariaDB root credential passed by Compose. |
 | `CATALOG_API_URL` | PHP-to-FastAPI base URL; Compose defaults to `http://catalog-api:8000`. |
-| `CATALOG_PRICE_SOURCE_URL` | Python price provider's configurable PosoKanei base URL; defaults to `https://posokanei.gov.gr/`. |
+| `CATALOG_PRICE_SOURCE_URL` | Python provider API base URL or full `/products/search` URL; defaults to `https://api.posokanei.gov.gr`. |
 | `OPEN_FOOD_FACTS_BASE_URL` | Python nutrition provider's configurable Open Food Facts base URL; defaults to `https://world.openfoodfacts.org`. |
 | `LLM_API_KEY` | When empty, `LlmClient` returns the planner's supplied deterministic mock response. When set, the client makes a bearer-authenticated structured JSON chat request. |
 | `LLM_BASE_URL` | Required with a non-empty `LLM_API_KEY`; the client appends `/chat/completions`. |
@@ -392,8 +400,8 @@ not automatically alter an already-populated MariaDB data directory.
 With `LLM_API_KEY` set but either `LLM_BASE_URL` or `LLM_MODEL` missing, plan
 generation throws an explicit configuration error. A provider response must
 contain a non-empty JSON object at `choices[0].message.content` and satisfy
-the plan DTO/allowed-recipe checks. The LLM is used by MealPlanner; Agent 4's
-current checks are not provider-backed.
+the plan DTO/allowed-recipe checks. The LLM is used by MealPlanner; Agent 4
+uses deterministic validation rules and catalog nutrition data, not an LLM.
 
 ### GitHub Actions Secrets
 
@@ -415,14 +423,16 @@ through some other deployment configuration.
   workflow supplies them.
 - Confirm production MariaDB has the tables in `database/schema.sql`; the
   Compose mount does not migrate a non-empty existing database.
-- Decide whether an Agent-4-rejected plan should be saveable through the
-  approval button or blocked server-side.
-- Review nutrition estimates and unsupported/unimplemented profile rules:
-  the current validator uses ingredient-name heuristics, and does not
-  implement dietary-note or fasting-window enforcement. Its prompt is not
-  currently called.
-- Catalog failures are caught by the shopping optimizer; items may remain
-  with unavailable prices and the total can omit those costs.
+- Verify that Agent-4-rejected plans remain blocked both in the UI and in the
+  server-side approval action.
+- Dietary-note enforcement is intentionally limited to supported terms
+  (vegan, vegetarian, gluten-free, dairy-free); arbitrary free text is not
+  guaranteed to be interpreted. Fasting checks assume breakfast at 08:00,
+  lunch at 13:00, and dinner at 19:00.
+- The PosoKanei response shape and whether `price_normalized` is per kg/litre
+  still need a live integration check. Local fixture fallback is explicitly
+  approximate. Catalog failures can leave items with unavailable prices, and
+  the displayed total sums only available item prices.
 - `UserRepository::findRecentRecipeIds()` does not filter plan status, so
   recent meals from any stored plan status can influence planner ordering.
 - The test-phase script requires DB connectivity and a seeded user 1.
