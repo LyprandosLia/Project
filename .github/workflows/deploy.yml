@@ -49,4 +49,5 @@ jobs:
           script_stop: true
           script: |
             cd /srv/lyp
-            docker compose up -d --build --remove-orphans web
+            docker compose -f docker-compose.yml down --remove-orphans || true
+            docker compose -f docker-compose.yml up -d --build --remove-orphans
