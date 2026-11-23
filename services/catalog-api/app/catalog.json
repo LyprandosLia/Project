@@ -1,0 +1,136 @@
+{
+  "currency": "EUR",
+  "ingredients": {
+    "Carrot": {
+      "fetched_at": "2026-11-23T10:00:00+00:00",
+      "nutrition_per_100g": {
+        "calories_kcal": 41,
+        "carbohydrates_g": 9.6,
+        "fat_g": 0.2,
+        "fiber_g": 2.8,
+        "protein_g": 0.9
+      },
+      "price": 1.5,
+      "price_unit": "kg",
+      "source": "local fixture"
+    },
+    "Chickpeas": {
+      "fetched_at": "2026-11-23T10:00:00+00:00",
+      "nutrition_per_100g": {
+        "calories_kcal": 164,
+        "carbohydrates_g": 27.4,
+        "fat_g": 2.6,
+        "fiber_g": 7.6,
+        "protein_g": 8.9
+      },
+      "price": 2.2,
+      "price_unit": "kg",
+      "source": "local fixture"
+    },
+    "Garlic": {
+      "fetched_at": "2026-11-23T10:00:00+00:00",
+      "nutrition_per_100g": {
+        "calories_kcal": 149,
+        "carbohydrates_g": 33.1,
+        "fat_g": 0.5,
+        "fiber_g": 2.1,
+        "protein_g": 6.4
+      },
+      "price": 8.0,
+      "price_unit": "kg",
+      "source": "local fixture"
+    },
+    "Olive oil": {
+      "fetched_at": "2026-11-23T10:00:00+00:00",
+      "nutrition_per_100g": {
+        "calories_kcal": 884,
+        "carbohydrates_g": 0,
+        "fat_g": 100,
+        "fiber_g": 0,
+        "protein_g": 0
+      },
+      "price": 8.5,
+      "price_unit": "l",
+      "source": "local fixture"
+    },
+    "Onion": {
+      "fetched_at": "2026-11-23T10:00:00+00:00",
+      "nutrition_per_100g": {
+        "calories_kcal": 40,
+        "carbohydrates_g": 9.3,
+        "fat_g": 0.1,
+        "fiber_g": 1.7,
+        "protein_g": 1.1
+      },
+      "price": 1.8,
+      "price_unit": "kg",
+      "source": "local fixture"
+    },
+    "Pasta": {
+      "fetched_at": "2026-11-23T10:00:00+00:00",
+      "nutrition_per_100g": {
+        "calories_kcal": 131,
+        "carbohydrates_g": 25.0,
+        "fat_g": 1.1,
+        "fiber_g": 1.8,
+        "protein_g": 5.0
+      },
+      "price": 1.9,
+      "price_unit": "kg",
+      "source": "local fixture"
+    },
+    "Red lentils": {
+      "fetched_at": "2026-11-23T10:00:00+00:00",
+      "nutrition_per_100g": {
+        "calories_kcal": 116,
+        "carbohydrates_g": 20.1,
+        "fat_g": 0.4,
+        "fiber_g": 7.9,
+        "protein_g": 9.0
+      },
+      "price": 2.4,
+      "price_unit": "kg",
+      "source": "local fixture"
+    },
+    "Rice": {
+      "currency": "EUR",
+      "fetched_at": "2026-11-23T10:00:00+00:00",
+      "nutrition_per_100g": {
+        "calories_kcal": 130,
+        "carbohydrates_g": 28.2,
+        "fat_g": 0.3,
+        "fiber_g": 0.4,
+        "protein_g": 2.7
+      },
+      "price": 2.1,
+      "price_unit": "kg",
+      "source": "local fixture"
+    },
+    "Spinach": {
+      "fetched_at": "2026-11-23T10:00:00+00:00",
+      "nutrition_per_100g": {
+        "calories_kcal": 23,
+        "carbohydrates_g": 3.6,
+        "fat_g": 0.4,
+        "fiber_g": 2.2,
+        "protein_g": 2.9
+      },
+      "price": 4.0,
+      "price_unit": "kg",
+      "source": "local fixture"
+    },
+    "Tomatoes": {
+      "fetched_at": "2026-11-23T10:00:00+00:00",
+      "nutrition_per_100g": {
+        "calories_kcal": 18,
+        "carbohydrates_g": 3.9,
+        "fat_g": 0.2,
+        "fiber_g": 1.2,
+        "protein_g": 0.9
+      },
+      "price": 2.8,
+      "price_unit": "kg",
+      "source": "local fixture"
+    }
+  }
+}

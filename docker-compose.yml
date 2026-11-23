@@ -29,6 +29,9 @@ services:
     restart: unless-stopped
     networks:
       - internal
+    environment:
+      CATALOG_PRICE_SOURCE_URL: ${CATALOG_PRICE_SOURCE_URL:-https://posokanei.gov.gr/}
+      OPEN_FOOD_FACTS_BASE_URL: ${OPEN_FOOD_FACTS_BASE_URL:-https://world.openfoodfacts.org}
     healthcheck:
       test:
         - CMD

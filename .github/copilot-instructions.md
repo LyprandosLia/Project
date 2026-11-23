@@ -25,6 +25,8 @@
 
 ## FastAPI Boundary
 - Any external catalog/nutrition HTTP service belongs in `services/catalog-api/` and must use typed request/response models plus deterministic JSON contracts.
+- The primary Greek supermarket price source is the keyless `https://posokanei.gov.gr/` (e-Καταναλωτής) website. Use `httpx`, realistic browser headers, bounded timeouts, 24-hour local caching, and seeded Greek fallback prices. Do not require supermarket API keys or credentials.
+- Nutrition lookups use the keyless Open Food Facts API at `https://world.openfoodfacts.org/`, with a local per-100g fallback table for basic raw ingredients. No nutrition API key is required.
 - PHP consumes FastAPI over HTTP/JSON only after the service is explicitly requested and implemented; do not invent service dependencies or endpoints in this demo.
 
 ## Verification
