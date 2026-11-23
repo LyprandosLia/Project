@@ -125,7 +125,7 @@ $supportedUnits = ['g', 'kg', 'ml', 'l', 'piece'];
       </table>
     <?php endif; ?>
     <?php if ($ingredientCatalog !== []): ?>
-      <h3>Add pantry ingredient</h3>
+      <h3>Add a catalog ingredient</h3>
       <form method="post" class="pantry-form">
         <input type="hidden" name="csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="action" value="save_pantry">
@@ -145,6 +145,22 @@ $supportedUnits = ['g', 'kg', 'ml', 'l', 'piece'];
       </form>
       <p class="hint">Adding an ingredient already listed above replaces its saved quantity.</p>
     <?php endif; ?>
+    <h3>Add your own fridge item</h3>
+    <form method="post" class="pantry-form">
+      <input type="hidden" name="csrf_token" value="<?= $escape($csrfToken) ?>">
+      <input type="hidden" name="action" value="add_custom_pantry">
+      <input type="text" name="ingredient_name" maxlength="160" required
+             placeholder="For example: bell peppers" aria-label="Custom ingredient name">
+      <input type="number" name="quantity" min="0.001" step="0.001" required
+             value="1" aria-label="Quantity">
+      <select name="unit" aria-label="Unit">
+        <?php foreach ($supportedUnits as $unit): ?>
+          <option value="<?= $escape($unit) ?>"><?= $escape($unit) ?></option>
+        <?php endforeach; ?>
+      </select>
+      <button type="submit">Add to Pantry</button>
+    </form>
+    <p class="hint">If the name matches an existing ingredient, its pantry quantity is updated; otherwise a new ingredient is added. Weekly plans can use it when a saved recipe contains that ingredient.</p>
   </section>
 
   <section class="card">

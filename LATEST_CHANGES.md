@@ -11,7 +11,12 @@ For the full system map and database/environment reference, see
 - The dashboard now lets the demo user save calorie and protein targets,
   allergies, dietary notes, fasting windows, and maximum preparation time.
 - Users can add, update, and remove pantry quantities. The add form selects
-  the ingredient's canonical unit by default.
+  the ingredient's canonical unit by default, and now also accepts custom
+  named fridge items.
+- New custom names are stored in the existing ingredient catalog and pantry
+  tables without requiring a schema change. They affect planning only when a
+  saved recipe already uses that ingredient; adding an item does not create a
+  new recipe.
 - Weekly generation accepts a start date, one or more meal slots (breakfast,
   lunch, and/or dinner), servings, and a pantry-only or purchase-allowed mode.
 - The result page shows the proposed meals, scaled ingredients, nutrition
@@ -76,11 +81,11 @@ not guaranteed to be interpreted.
 | `services/catalog-api/app/provider.py` | Searches PosoKanei's JSON endpoint, parses comparable prices/units, and rejects incomplete matches so fallback can run. |
 | `services/catalog-api/app/catalog.json` | Labels bundled prices as approximate local estimates. |
 | `services/catalog-api/tests/test_catalog_api.py` | Exercises deterministic fixture fallback without relying on upstream availability. |
-| `app/index.php` | Handles profile/pantry saves, validates generation inputs, wires the updated agents, and enforces the approval gate. |
-| `views/dashboard.php` | Adds profile, pantry, meal-slot, serving, shopping-choice, shopping-list, and estimate-source UI. |
+| `app/index.php` | Handles profile, catalog pantry, and custom pantry saves; validates generation inputs, wires updated agents, and enforces the approval gate. |
+| `views/dashboard.php` | Adds profile, catalog/custom pantry, meal-slot, serving, shopping-choice, shopping-list, and estimate-source UI. |
 | `src/DTO/UserProfileDTO.php` | Validates profile goals, preferences, allergies, prep limits, and fasting values. |
 | `src/Repository/UserRepository.php` | Saves preferences and allergies transactionally and loads normalized profile values. |
-| `src/Repository/PantryRepository.php` | Reads typed pantry items and transactionally adds, updates, or removes stock. |
+| `src/Repository/PantryRepository.php` | Reads typed pantry items and transactionally adds, updates, or removes stock, creating a catalog ingredient for custom pantry entries. |
 | `src/Repository/RecipeRepository.php` | Provides the canonical ingredient list for pantry editing and serializes recipe ingredients. |
 | `src/Agents/MealPlannerAgent.php` | Applies profile and pantry constraints; validates schedule, servings, and pantry-only feasibility. |
 | `src/Agents/Orchestrator.php` | Passes the typed request and pantry through a maximum-three-attempt agent loop. |
@@ -89,10 +94,10 @@ not guaranteed to be interpreted.
 | `src/Prompts/meal-planner.md` | Documents the expanded planner inputs and expected schedule constraints. |
 | `src/Prompts/nutrition-feedback.md` | Documents nutrition-feedback expectations. |
 | `src/Prompts/shopping-optimizer.md` | Clarifies deterministic pantry subtraction and price arithmetic. |
-| `README.md` | Documents the planning UI, price fallback, and current agent workflow. |
-| `ARCHITECTURE.md` | Updates file inventory, workflow, schema responsibilities, price-source behavior, and limitations. |
+| `README.md` | Documents the planning UI, custom pantry items, price fallback, and current agent workflow. |
+| `ARCHITECTURE.md` | Updates file inventory, workflow, schema responsibilities, custom pantry behavior, price-source behavior, and limitations. |
 | `PLAN.md` | Replaces the obsolete pre-implementation plan status with current delivery and remaining verification needs. |
-| `.github/copilot-instructions.md` | Replaces stale demo-only guidance with the current architecture and validation practices. |
+| `.github/copilot-instructions.md` | Replaces stale demo-only guidance with the current architecture and validation practices, including custom pantry behavior. |
 
 ## Validation and remaining checks
 

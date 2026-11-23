@@ -95,8 +95,11 @@ service name and Traefik routing labels are retained.
 
 Open the dashboard through its existing Traefik route. Save goals,
 allergies, dietary preferences, fasting times, and prep limits; maintain the
-pantry; then select breakfast, lunch, and/or dinner, servings, and whether
-missing ingredients may be purchased. **Generate Weekly Plan** runs the
+pantry by selecting a catalog ingredient or adding your own named fridge item;
+then select breakfast, lunch, and/or dinner, servings, and whether missing
+ingredients may be purchased. Custom ingredients are saved to the pantry, but
+can only be selected by plans when a saved recipe contains a matching
+ingredient. **Generate Weekly Plan** runs the
 meal planner, recipe scaler, shopping optimizer, and nutrition feedback
 agent, with at most three plan attempts. Generated plans and their shopping
 lists remain in the session until approved or discarded. A rejected plan

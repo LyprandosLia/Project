@@ -114,7 +114,7 @@ The tree below excludes `.git/` and `vendor/`, but includes the generated
 | `app/index.php` | Existing server-rendered controller: Basic Auth, CSRF, POST action handling, agent wiring, session-held generated result, approval/discard/rating actions, and dashboard data loading. |
 | `app/db.php` | Creates the PDO connection from environment configuration and retains the legacy `items` query/insert functions. |
 | `public/index.php` | Apache document-root entry point; delegates the request to `app/index.php`. |
-| `views/dashboard.php` | Escaped HTML for the legacy items UI and the plan generation, trace, plan, shopping, approval, and rating panels. |
+| `views/dashboard.php` | Escaped HTML for profile editing, catalog/custom pantry items, plan generation, trace, shopping, approval, ratings, and the retained legacy items panel. |
 | `bin/test-phase3.php` | Standalone database-backed orchestration check; reads the profile for user 1, runs the pipeline, and emits a compact JSON result. |
 | `src/Agents/Orchestrator.php` | Agent 0: executes Agents 1-4 in sequence, records trace entries, sends validation feedback to the planner, and caps total attempts at three. |
 | `src/Agents/MealPlannerAgent.php` | Agent 1: filters by allergies, supported dietary terms, prep limits, recent/low ratings, fasting windows, and pantry feasibility; generates and validates the requested seven-day slot schedule. |
@@ -138,7 +138,7 @@ The tree below excludes `.git/` and `vendor/`, but includes the generated
 | `src/DTO/OrchestrationResultDTO.php` | Complete review payload returned by Agent 0: plan, scaled recipes, shopping list, validation, trace, and attempt count. |
 | `src/Repository/UserRepository.php` | Reads and transactionally saves profile preferences/allergies; reads recent recipe IDs and ratings and upserts user ratings. |
 | `src/Repository/RecipeRepository.php` | Reads recipe records/ingredient rows into DTOs and loads the canonical ingredient list for pantry editing. |
-| `src/Repository/PantryRepository.php` | Reads typed inventory and transactionally inserts, updates, or removes a user's ingredient quantities. |
+| `src/Repository/PantryRepository.php` | Reads typed inventory; transactionally inserts, updates, or removes stock and creates a catalog ingredient for a new custom pantry item. |
 | `src/Repository/MealPlanRepository.php` | Transactionally saves draft/approved plans and loads approved saved meals with ratings. |
 | `src/Service/LlmClient.php` | Provider-neutral structured-JSON chat client; uses a deterministic supplied mock when `LLM_API_KEY` is empty. |
 | `src/Service/CatalogApiClient.php` | HTTP/JSON client for the internal FastAPI price and nutrition endpoints. |
@@ -369,7 +369,7 @@ table.
 | `users` | User identity and display name. | `UserRepository::findProfile()` reads; schema seeds demo user 1. |
 | `user_preferences` | Calorie/protein targets, prep limit, fasting times, and dietary notes. | `UserRepository::findProfile()` reads and `saveProfile()` transactionally writes; schema seeds demo settings. |
 | `user_allergies` | Per-user allergy terms. | `UserRepository::findProfile()` reads and `saveProfile()` replaces a user's allergy rows; schema seeds a development allergy. |
-| `ingredients` | Canonical ingredient names and units. | `RecipeRepository` and `PantryRepository` join it for names; schema seeds ingredients. No application write method currently exists. |
+| `ingredients` | Canonical ingredient names and units. | `RecipeRepository` and `PantryRepository` join it for names; schema seeds standard ingredients and `PantryRepository::saveNamedQuantity()` inserts a missing custom ingredient. |
 | `recipes` | Recipe descriptions, prep time, base servings, and instructions. | `RecipeRepository` reads; schema seeds three recipes. |
 | `recipe_ingredients` | Recipe-to-ingredient quantities and units. | `RecipeRepository::findIngredients()` reads; schema seeds recipe contents. |
 | `pantry_inventory` | User-owned ingredient amounts and units. | `PantryRepository` reads inventory and transactionally inserts, updates, or removes it; schema seeds demo inventory. |
@@ -429,6 +429,9 @@ through some other deployment configuration.
   (vegan, vegetarian, gluten-free, dairy-free); arbitrary free text is not
   guaranteed to be interpreted. Fasting checks assume breakfast at 08:00,
   lunch at 13:00, and dinner at 19:00.
+- Users can add custom pantry names, but new names do not create recipes. A
+  custom item only affects recipe selection or shopping subtraction when it
+  matches an ingredient already used by a saved recipe.
 - The PosoKanei response shape and whether `price_normalized` is per kg/litre
   still need a live integration check. Local fixture fallback is explicitly
   approximate. Catalog failures can leave items with unavailable prices, and

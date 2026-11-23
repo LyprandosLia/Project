@@ -117,6 +117,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $success = (float) $quantity->amount === 0.0
                     ? 'Pantry stock removed.'
                     : 'Pantry stock saved.';
+            } elseif ($action === 'add_custom_pantry') {
+                $ingredientName = $_POST['ingredient_name'] ?? null;
+                $quantityAmount = $_POST['quantity'] ?? null;
+                $quantityUnit = $_POST['unit'] ?? null;
+                if (!is_string($ingredientName) || !is_string($quantityAmount) || !is_string($quantityUnit)) {
+                    throw new InvalidArgumentException('Enter an ingredient name, quantity, and unit.');
+                }
+                $quantity = \App\DTO\Quantity::fromArray([
+                    'amount' => trim($quantityAmount),
+                    'unit' => trim($quantityUnit),
+                ]);
+                (new PantryRepository(get_db()))->saveNamedQuantity(
+                    $userId,
+                    $ingredientName,
+                    $quantity,
+                );
+                $success = 'Custom ingredient added to your pantry.';
             } elseif ($action === 'generate') {
                 $pdo = get_db();
                 $users = new UserRepository($pdo);

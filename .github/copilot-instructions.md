@@ -11,7 +11,7 @@
 - Every PHP file must begin with `declare(strict_types=1);`, use an `App\...` namespace for application classes, follow existing formatting, and declare explicit parameter and return types.
 - Structured data between the application and agents should use the existing typed DTOs. Keep SQL in repository classes, use named PDO parameters, native prepares, and exception mode.
 - Read secrets and configuration from the environment. Keep LLM JSON behind strict decoding and validation; quantity scaling, pantry subtraction, and cost summation remain deterministic application code.
-- The dashboard collects calorie/protein goals, allergies, dietary notes, fasting windows, prep limits, pantry quantities, selected breakfast/lunch/dinner slots, servings, and shopping mode. Profile and pantry writes must be validated and transactional.
+- The dashboard collects calorie/protein goals, allergies, dietary notes, fasting windows, prep limits, pantry quantities (including custom named ingredients), selected breakfast/lunch/dinner slots, servings, and shopping mode. Profile and pantry writes must be validated and transactional. Custom ingredient entries do not create recipes.
 - Generation is session-only until explicit human approval. A plan rejected by nutrition validation must not be persisted. The orchestrator runs at most three total attempts, including the first.
 - Keep each agent role distinct: MealPlanner selects a valid schedule; RecipeSpecialist scales recipe quantities; ShoppingOptimizer subtracts pantry and estimates remaining purchases; NutritionFeedback validates the plan and returns revision feedback.
 
