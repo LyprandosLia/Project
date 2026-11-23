@@ -20,7 +20,7 @@ final class MealPlannerAgent
     ) {
     }
 
-    public function propose(UserProfileDTO $profile, string $startsOn): MealPlanDTO
+    public function propose(UserProfileDTO $profile, string $startsOn, ?string $feedback = null): MealPlanDTO
     {
         $start = new \DateTimeImmutable($startsOn);
         $end = $start->modify('+6 days');
@@ -60,7 +60,14 @@ final class MealPlannerAgent
 
         $meals = [];
         for ($day = 0; $day < 7; $day++) {
-            $recipe = $allowed[$day % count($allowed)];
+            $index = $day % count($allowed);
+            if ($feedback !== null && str_contains(strtolower($feedback), 'variety')) {
+                $index = ($day * 2) % count($allowed);
+            }
+            if ($feedback !== null && str_contains(strtolower($feedback), 'repeated')) {
+                $index = ($day + 1) % count($allowed);
+            }
+            $recipe = $allowed[$index];
             $meals[] = [
                 'date' => $start->modify(sprintf('+%d days', $day))->format('Y-m-d'),
                 'slot' => 'dinner',
@@ -78,6 +85,7 @@ final class MealPlannerAgent
         $prompt = is_file($promptPath) ? (string) file_get_contents($promptPath) : '';
         $decoded = $this->llm->generateStructuredJson($prompt, [
             'profile' => $profile->toArray(),
+            'revision_feedback' => $feedback,
             'allowed_recipes' => array_map(static fn ($recipe): array => [
                 'id' => $recipe->id,
                 'name' => $recipe->name,

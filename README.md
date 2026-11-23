@@ -1,8 +1,8 @@
 # Multi-Agent Food OS
 
 The initial foundation uses PHP 8.3/Apache, MariaDB, and an internal
-FastAPI service. The meal-planning agents and user-facing application are
-planned in [PLAN.md](./PLAN.md).
+FastAPI service. The complete meal-planning pipeline includes Agent 1
+through Agent 4, bounded feedback retries, and the human approval UI.
 
 ## Run locally
 
@@ -88,3 +88,16 @@ service name and Traefik routing labels are retained.
 - `Dockerfile`, `docker-compose.yml` — PHP, database, and API services
 - `.env.example` — local environment template; never commit `.env`
 - `.github/workflows/deploy.yml` — deployment workflow
+
+## Weekly plan generation
+
+Open the dashboard through its existing Traefik route and use
+**Generate Weekly Plan**. The server runs the meal planner, recipe
+scaler, shopping optimizer, and nutrition feedback agent, with at most
+three plan attempts. Generated plans remain in the session only until
+the user chooses **Approve & Save Plan** or **Discard**. No plan is
+written to `meal_plans` during generation.
+
+Set `LLM_API_KEY` to enable provider-backed JSON responses. When it is
+unset, the existing providers return the deterministic mock response,
+so the dashboard remains usable without an external LLM.

@@ -1,62 +1,127 @@
 <?php
+
+declare(strict_types=1);
+
+$composerAutoload = dirname(__DIR__) . '/vendor/autoload.php';
+if (is_file($composerAutoload)) {
+    require $composerAutoload;
+} else {
+    spl_autoload_register(static function (string $class): void {
+        $prefix = 'App\\';
+        if (str_starts_with($class, $prefix)) {
+            $path = dirname(__DIR__) . '/src/' . str_replace('\\', '/', substr($class, strlen($prefix))) . '.php';
+            if (is_file($path)) {
+                require $path;
+            }
+        }
+    });
+}
+
+use App\Agents\MealPlannerAgent;
+use App\Agents\NutritionFeedbackAgent;
+use App\Agents\Orchestrator;
+use App\Agents\RecipeSpecialistAgent;
+use App\Agents\ShoppingOptimizerAgent;
+use App\Repository\MealPlanRepository;
+use App\Repository\PantryRepository;
+use App\Repository\RecipeRepository;
+use App\Repository\UserRepository;
+use App\Service\CatalogApiClient;
+use App\Service\LlmClient;
+
 require __DIR__ . '/db.php';
 
-$site_user = getenv('SITE_USERNAME');
-$site_pass = getenv('SITE_PASSWORD');
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
+if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$csrfToken = (string) $_SESSION['csrf_token'];
 
-$given_user = $_SERVER['PHP_AUTH_USER'] ?? '';
-$given_pass = $_SERVER['PHP_AUTH_PW'] ?? '';
+$siteUser = (string) (getenv('SITE_USERNAME') ?: '');
+$sitePass = (string) (getenv('SITE_PASSWORD') ?: '');
+$givenUser = (string) ($_SERVER['PHP_AUTH_USER'] ?? '');
+$givenPass = (string) ($_SERVER['PHP_AUTH_PW'] ?? '');
 
-if (!hash_equals($site_user, $given_user) || !hash_equals($site_pass, $given_pass)) {
-    header('WWW-Authenticate: Basic realm="Items"');
-    header('HTTP/1.0 401 Unauthorized');
+if ($siteUser === '' || $sitePass === '' || !hash_equals($siteUser, $givenUser) || !hash_equals($sitePass, $givenPass)) {
+    header('WWW-Authenticate: Basic realm="Multi-Agent Food OS"');
+    header('HTTP/1.1 401 Unauthorized');
     echo 'Authentication required.';
     exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['name'])) {
-    add_item($_POST['name'], $_POST['note'] ?? '');
-    header('Location: /');
-    exit;
+$error = null;
+$success = null;
+$userId = 1;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $postedToken = (string) ($_POST['csrf_token'] ?? '');
+    if (!hash_equals($csrfToken, $postedToken)) {
+        $error = 'Invalid CSRF token. Please retry.';
+    } else {
+        $action = (string) ($_POST['action'] ?? '');
+        try {
+            if ($action === 'add_item' && isset($_POST['name'])) {
+                add_item((string) $_POST['name'], (string) ($_POST['note'] ?? ''));
+                $success = 'Item added.';
+            } elseif ($action === 'generate') {
+                $pdo = get_db();
+                $users = new UserRepository($pdo);
+                $recipes = new RecipeRepository($pdo);
+                $pantry = new PantryRepository($pdo);
+                $llm = new LlmClient();
+                $profile = $users->findProfile($userId);
+                if ($profile === null) {
+                    throw new RuntimeException('User profile was not found.');
+                }
+                $orchestrator = new Orchestrator(
+                    new MealPlannerAgent($users, $recipes, $llm),
+                    new RecipeSpecialistAgent($recipes),
+                    new ShoppingOptimizerAgent($pantry, new CatalogApiClient()),
+                    new NutritionFeedbackAgent($users),
+                );
+                $startsOn = (string) ($_POST['starts_on'] ?? date('Y-m-d'));
+                $startsOn = (new DateTimeImmutable($startsOn))->format('Y-m-d');
+                $_SESSION['generated_result'] = $orchestrator->run($profile, $startsOn);
+                $success = 'Weekly plan generated for review. Nothing has been saved.';
+            } elseif ($action === 'approve') {
+                $result = $_SESSION['generated_result'] ?? null;
+                if (!$result instanceof \App\DTO\OrchestrationResultDTO) {
+                    throw new RuntimeException('No generated plan is awaiting approval.');
+                }
+                $planId = (new MealPlanRepository(get_db()))->saveApproved($result->plan);
+                unset($_SESSION['generated_result']);
+                $success = sprintf('Plan approved and saved (meal plan #%d).', $planId);
+            } elseif ($action === 'discard') {
+                unset($_SESSION['generated_result']);
+                $success = 'Generated plan discarded.';
+            } elseif ($action === 'rate') {
+                $recipeId = filter_input(INPUT_POST, 'recipe_id', FILTER_VALIDATE_INT);
+                $rating = filter_input(INPUT_POST, 'rating', FILTER_VALIDATE_INT);
+                if ($recipeId === false || $rating === false || $rating < 1 || $rating > 5) {
+                    throw new InvalidArgumentException('Choose a valid 1 to 5 star rating.');
+                }
+                (new UserRepository(get_db()))->saveRating($userId, (int) $recipeId, (int) $rating);
+                $success = 'Meal rating saved.';
+            }
+        } catch (Throwable $exception) {
+            $error = $exception->getMessage();
+        }
+    }
+    if ($error === null) {
+        header('Location: /');
+        exit;
+    }
 }
 
 $items = get_items();
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Items Menu</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; color: #1a1a1a; }
-    .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; }
-    .card h3 { margin: 0 0 4px 0; }
-    .card p { margin: 0; color: #444; }
-    form.add { margin-top: 24px; border-top: 1px solid #ddd; padding-top: 16px; }
-    input, textarea { width: 100%; padding: 8px; margin-bottom: 8px; box-sizing: border-box; }
-    button { background: #2563eb; color: white; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; }
-  </style>
-</head>
-<body>
-  <h1>Items - Changed by Lee - Test 4</h1>
+$generatedResult = $_SESSION['generated_result'] ?? null;
+$savedMeals = [];
+try {
+    $savedMeals = (new MealPlanRepository(get_db()))->findSavedMeals($userId);
+} catch (Throwable $exception) {
+    $savedMeals = [];
+}
 
-  <?php if (empty($items)): ?>
-    <p>No items yet.</p>
-  <?php endif; ?>
-
-  <?php foreach ($items as $item): ?>
-    <div class="card">
-      <h3><?= htmlspecialchars($item['name']) ?></h3>
-      <?php if (!empty($item['note'])): ?>
-        <p><?= htmlspecialchars($item['note']) ?></p>
-      <?php endif; ?>
-    </div>
-  <?php endforeach; ?>
-
-  <form class="add" method="post" action="/">
-    <input type="text" name="name" placeholder="Item name" required>
-    <textarea name="note" placeholder="Note (optional)"></textarea>
-    <button type="submit">Add item here (yo) </button>
-  </form>
-</body>
-</html>
+require dirname(__DIR__) . '/views/dashboard.php';

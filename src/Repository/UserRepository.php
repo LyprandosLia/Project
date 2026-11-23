@@ -81,4 +81,33 @@ final class UserRepository
         }
         return $ids;
     }
+
+    public function findRatingsByUser(int $userId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT recipe_id, rating, comment, created_at
+             FROM ratings
+             WHERE user_id = :user_id
+             ORDER BY created_at DESC'
+        );
+        $stmt->execute([':user_id' => $userId]);
+        return $stmt->fetchAll();
+    }
+
+    public function saveRating(int $userId, int $recipeId, int $rating): void
+    {
+        if ($rating < 1 || $rating > 5) {
+            throw new \InvalidArgumentException('Rating must be between 1 and 5');
+        }
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO ratings (user_id, recipe_id, rating)
+             VALUES (:user_id, :recipe_id, :rating)
+             ON DUPLICATE KEY UPDATE rating = VALUES(rating), created_at = CURRENT_TIMESTAMP'
+        );
+        $stmt->execute([
+            ':user_id' => $userId,
+            ':recipe_id' => $recipeId,
+            ':rating' => $rating,
+        ]);
+    }
 }

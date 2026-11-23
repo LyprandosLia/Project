@@ -16,6 +16,8 @@ spl_autoload_register(static function (string $class): void {
 use App\Agents\MealPlannerAgent;
 use App\Agents\RecipeSpecialistAgent;
 use App\Agents\ShoppingOptimizerAgent;
+use App\Agents\NutritionFeedbackAgent;
+use App\Agents\Orchestrator;
 use App\Repository\MealPlanRepository;
 use App\Repository\PantryRepository;
 use App\Repository\RecipeRepository;
@@ -55,17 +57,16 @@ try {
     if ($profile === null) {
         throw new RuntimeException('Verification user 1 was not found');
     }
-    $mealPlanner = new MealPlannerAgent($users, $recipes, $llm);
-    $plan = $mealPlanner->propose($profile, date('Y-m-d'));
-
-    $recipeSpecialist = new RecipeSpecialistAgent($recipes);
-    $scaledRecipes = [];
-    foreach ($plan->meals as $meal) {
-        $scaledRecipes[] = $recipeSpecialist->scale($meal, $profile->maxPrepMinutes);
-    }
-
-    $shoppingOptimizer = new ShoppingOptimizerAgent($pantry, $catalog);
-    $shoppingList = $shoppingOptimizer->optimize($profile->userId, $scaledRecipes);
+    $orchestrator = new Orchestrator(
+        new MealPlannerAgent($users, $recipes, $llm),
+        new RecipeSpecialistAgent($recipes),
+        new ShoppingOptimizerAgent($pantry, $catalog),
+        new NutritionFeedbackAgent($users),
+    );
+    $result = $orchestrator->run($profile, date('Y-m-d'));
+    $plan = $result->plan;
+    $scaledRecipes = $result->scaledRecipes;
+    $shoppingList = $result->shoppingList;
 
     echo json_encode([
         'dry_run' => true,
@@ -75,6 +76,9 @@ try {
         'shopping_items' => count($shoppingList->items),
         'estimated_total' => $shoppingList->estimatedTotal,
         'currency' => $shoppingList->currency,
+        'orchestrator_attempts' => $result->attempts,
+        'trace_steps' => count($result->trace),
+        'validation_approved' => $result->validation->approved,
         'live_schedule_write_performed' => false,
     ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL;
 } catch (Throwable $exception) {
