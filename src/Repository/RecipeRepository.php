@@ -27,8 +27,7 @@ final class RecipeRepository
         $stmt->execute();
         $recipes = [];
         foreach ($stmt->fetchAll() as $row) {
-            $row['ingredients'] = $this->findIngredients((int) $row['id']);
-            $recipes[] = RecipeDTO::fromArray($row);
+            $recipes[] = $this->recipeFromRow($row);
         }
         return $recipes;
     }
@@ -44,8 +43,7 @@ final class RecipeRepository
         if ($row === false) {
             return null;
         }
-        $row['ingredients'] = $this->findIngredients($recipeId);
-        return RecipeDTO::fromArray($row);
+        return $this->recipeFromRow($row);
     }
 
     public function findByIds(array $recipeIds): array
@@ -68,8 +66,7 @@ final class RecipeRepository
         $stmt->execute($parameters);
         $recipes = [];
         foreach ($stmt->fetchAll() as $row) {
-            $row['ingredients'] = $this->findIngredients((int) $row['id']);
-            $recipes[] = RecipeDTO::fromArray($row);
+            $recipes[] = $this->recipeFromRow($row);
         }
         return $recipes;
     }
@@ -97,5 +94,14 @@ final class RecipeRepository
             ]);
         }
         return $ingredients;
+    }
+
+    private function recipeFromRow(array $row): RecipeDTO
+    {
+        $row['ingredients'] = array_map(
+            static fn (RecipeIngredientDTO $ingredient): array => $ingredient->toArray(),
+            $this->findIngredients((int) $row['id']),
+        );
+        return RecipeDTO::fromArray($row);
     }
 }

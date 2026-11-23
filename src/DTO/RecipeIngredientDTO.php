@@ -32,4 +32,14 @@ readonly class RecipeIngredientDTO
             isset($data['notes']) && is_string($data['notes']) ? $data['notes'] : null,
         );
     }
+
+    public function toArray(): array
+    {
+        return [
+            'ingredient_id' => $this->ingredientId,
+            'name' => $this->name,
+            'quantity' => $this->quantity->toArray(),
+            'notes' => $this->notes,
+        ];
+    }
 }
