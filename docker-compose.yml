@@ -13,8 +13,6 @@ services:
     networks:
       - traefik
       - internal
-    ports:
-      - "127.0.0.1:${WEB_PORT:-8080}:80"
     environment:
       CATALOG_API_URL: ${CATALOG_API_URL:-http://catalog-api:8000}
     labels:

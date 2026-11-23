@@ -7,6 +7,7 @@
 - Compose loads `.env` for `lyp-app`. Required values are `SITE_USERNAME`, `SITE_PASSWORD`, `DB_HOST`, `DB_NAME`, `DB_USER`, and `DB_PASSWORD`; MariaDB also receives `DB_ROOT_PASSWORD`. `.env.example` documents their defaults. Never commit `.env`.
 - Database persistence is `./data/`; first-run schema and seed SQL is `./db-init/init.sql`, which creates `items` and inserts three rows. It is mounted into MariaDB's initialization directory.
 - Traefik routes `lyp-app` to `https://lyp.nkyriopoulos.com` on the external `traefik` network. Deployment uses GitHub Actions to rsync to `/srv/lyp/` and then runs `docker compose up -d --build --remove-orphans web`.
+- Do not publish host ports (`ports:`) on `web`, `db`, or `catalog-api` in `docker-compose.yml`; external access is handled exclusively via Traefik labels.
 - Current source is `app/index.php` and `app/db.php`; there is currently no `composer.json`, `vendor/`, `src/`, `views/`, `services/catalog-api/`, or FastAPI application. Do not claim or require tools/paths that do not exist until they are actually added.
 
 ## PHP, DTO, and Database Rules
